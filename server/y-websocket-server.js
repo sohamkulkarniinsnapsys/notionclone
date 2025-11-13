@@ -11,7 +11,9 @@ import jwt from "jsonwebtoken";
 
 dotenv.config();
 
-const port = process.env.YWS_PORT ? Number(process.env.YWS_PORT) : 1234;
+// Accept Railway / container PORT first, then YWS_PORT, then default 1234
+const port = process.env.PORT ? Number(process.env.PORT) : (process.env.YWS_PORT ? Number(process.env.YWS_PORT) : 1234);
+
 const secret = process.env.NEXTAUTH_SECRET;
 
 if (!secret) {

@@ -1,0 +1,23 @@
+{
+  "name": "notionclone-ws",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "y-websocket-server.js",
+  "scripts": {
+    "start": "node y-websocket-server.js",
+    "start:dev": "NODE_ENV=development node --enable-source-maps y-websocket-server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "lib0": "^0.2.56",
+    "jsonwebtoken": "^9.0.2",
+    "ws": "^8.18.3",
+    "y-protocols": "^1.0.9",
+    "y-websocket": "^3.0.0",
+    "yjs": "^13.6.27"
+  }
+}
