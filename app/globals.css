@@ -1,26 +1,500 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+    --background: #f7f8fa;
+    --foreground: #171717;
+    --editor-background: #ffffff;
+    --editor-text: #000000;
+    --editor-caret: #111111;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --font-sans: var(--font-geist-sans);
+    --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+    :root {
+        --background: #0a0a0a;
+        --foreground: #ededed;
+    }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+    background: var(--background);
+    color: var(--foreground);
+    font-family:
+        "Inter",
+        system-ui,
+        -apple-system,
+        "Segoe UI",
+        Roboto,
+        "Helvetica Neue",
+        Arial,
+        sans-serif;
+}
+
+/**
+ * Tiptap Editor Styles
+ * Force black text color for editor content
+ */
+.tiptap-content {
+    color: var(--editor-text) !important;
+    caret-color: var(--editor-caret);
+    line-height: 1.65;
+    font-family:
+        "Inter",
+        system-ui,
+        -apple-system,
+        "Segoe UI",
+        Roboto,
+        "Helvetica Neue",
+        Arial,
+        sans-serif;
+    font-size: 16px;
+    background: var(--editor-background);
+}
+
+.tiptap-content * {
+    color: inherit;
+}
+
+/* Ensure text nodes are black */
+.tiptap-content p,
+.tiptap-content h1,
+.tiptap-content h2,
+.tiptap-content h3,
+.tiptap-content h4,
+.tiptap-content h5,
+.tiptap-content h6,
+.tiptap-content li,
+.tiptap-content blockquote,
+.tiptap-content td,
+.tiptap-content th {
+    color: #000000;
+}
+
+/* Headings */
+.tiptap-content h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.25;
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.tiptap-content h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1.3;
+    margin-top: 1.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.tiptap-content h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1.4;
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Paragraphs */
+.tiptap-content p {
+    margin-bottom: 0.75rem;
+}
+
+/* ----------------------------
+   Lists (fixed: bullets vs numbers)
+   ---------------------------- */
+
+/* Base spacing for lists in the editor (applies to both ul and ol) */
+.tiptap-content ul,
+.tiptap-content ol,
+.ProseMirror ul,
+.ProseMirror ol {
+    padding-left: 1.5rem;
+    margin-bottom: 0.75rem;
+}
+
+/* Task lists are a special case (no browser markers, custom layout) */
+.tiptap-content ul[data-type="taskList"],
+.ProseMirror ul[data-type="taskList"] {
+    list-style: none;
+    padding-left: 0;
+}
+
+/* Task list item layout stays flex for checkbox + content */
+.tiptap-content ul[data-type="taskList"] li,
+.ProseMirror ul[data-type="taskList"] li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+/* Normal lists: explicitly set marker position and types */
+
+/* make sure ordinary ULs show bullets (disc) */
+.tiptap-content ul:not([data-type="taskList"]),
+.ProseMirror ul:not([data-type="taskList"]) {
+    list-style-position: outside;
+    list-style-type: disc;
+    padding-left: 1.5rem;
+}
+
+/* make sure ordinary OLs show numbers (decimal) */
+.tiptap-content ol:not([data-type="taskList"]),
+.ProseMirror ol:not([data-type="taskList"]) {
+    list-style-position: outside;
+    list-style-type: decimal;
+    padding-left: 1.5rem;
+}
+
+/* Ensure the browser draws markers by forcing list-item display for normal list items */
+.tiptap-content ul:not([data-type="taskList"]) li,
+.tiptap-content ol:not([data-type="taskList"]) li,
+.ProseMirror ul:not([data-type="taskList"]) li,
+.ProseMirror ol:not([data-type="taskList"]) li {
+    display: list-item;
+    margin-bottom: 0.25rem;
+}
+
+/* Marker styling: make markers visible and inherit text color */
+.tiptap-content ul::marker,
+.tiptap-content ol::marker,
+.tiptap-content ul:not([data-type="taskList"]) li::marker,
+.tiptap-content ol:not([data-type="taskList"]) li::marker,
+.ProseMirror ul::marker,
+.ProseMirror ol::marker,
+.ProseMirror ul:not([data-type="taskList"]) li::marker,
+.ProseMirror ol:not([data-type="taskList"]) li::marker {
+    color: currentColor;
+    font-weight: 600;
+    opacity: 1;
+    font-size: 1em;
+}
+
+/* Keep small gap in list items (task lists override layout above) */
+.tiptap-content li {
+    margin-bottom: 0.25rem;
+}
+
+/* ----------------------------
+   End Lists
+   ---------------------------- */
+
+/* Code blocks */
+.tiptap-content pre {
+    background: #f3f4f6;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin: 0.75rem 0;
+    overflow-x: auto;
+}
+
+.tiptap-content code {
+    background: #f3f4f6;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+    font-family: "JetBrains Mono", "Fira Code", monospace;
+    font-size: 0.875em;
+    color: #dc2626 !important;
+}
+
+.tiptap-content pre code {
+    background: transparent;
+    padding: 0;
+    color: #000000 !important;
+}
+
+/* Blockquotes */
+.tiptap-content blockquote {
+    border-left: 3px solid #e5e7eb;
+    padding-left: 1rem;
+    margin: 0.75rem 0;
+    font-style: italic;
+    color: #6b7280 !important;
+}
+
+/* Links */
+.tiptap-content a {
+    color: #3b82f6 !important;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.tiptap-content a:hover {
+    color: #2563eb !important;
+}
+
+/* Tables */
+.tiptap-content table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.75rem 0;
+}
+
+.tiptap-content td,
+.tiptap-content th {
+    border: 1px solid #e5e7eb;
+    padding: 0.5rem;
+    text-align: left;
+}
+
+.tiptap-content th {
+    background: #f9fafb;
+    font-weight: 600;
+}
+
+/* Selection */
+.tiptap-content ::selection {
+    background: rgba(59, 130, 246, 0.15);
+}
+
+/* Focus outline */
+.tiptap-content:focus {
+    outline: none;
+}
+
+/* Placeholder */
+.tiptap-content .is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    color: #9ca3af;
+    pointer-events: none;
+    height: 0;
+}
+
+/* Collaboration cursor styles */
+.tiptap-content .collaboration-cursor__caret {
+    border-left: 2px solid;
+    border-color: currentColor;
+    margin-left: -1px;
+    margin-right: -1px;
+    pointer-events: none;
+    position: relative;
+    word-break: normal;
+}
+
+.tiptap-content .collaboration-cursor__label {
+    border-radius: 3px 3px 3px 0;
+    color: #fff;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 600;
+    left: -1px;
+    line-height: normal;
+    padding: 2px 6px;
+    position: absolute;
+    top: -1.4em;
+    user-select: none;
+    white-space: nowrap;
+}
+
+/**
+ * Slash Command Menu Styles
+ * Notion-like floating menu for block insertion
+ */
+
+/* Tippy.js theme for slash menu */
+.tippy-box[data-theme~="slash-menu"] {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow:
+        0 10px 15px -3px rgb(0 0 0 / 0.1),
+        0 4px 6px -4px rgb(0 0 0 / 0.1);
+    border: 1px solid #e5e7eb;
+    padding: 0;
+    max-height: 400px;
+    overflow: hidden;
+}
+
+.tippy-box[data-theme~="slash-menu"][data-placement^="top"]
+    > .tippy-arrow::before {
+    border-top-color: white;
+}
+
+.tippy-box[data-theme~="slash-menu"][data-placement^="bottom"]
+    > .tippy-arrow::before {
+    border-bottom-color: white;
+}
+
+/* Slash menu container */
+.slash-menu {
+    width: 320px;
+    max-height: 400px;
+    display: flex;
+    flex-direction: column;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* Menu header */
+.slash-menu-header {
+    padding: 8px 12px;
+    border-bottom: 1px solid #f3f4f6;
+    background: #fafafa;
+}
+
+.slash-menu-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Menu items container */
+.slash-menu-items {
+    overflow-y: auto;
+    max-height: 350px;
+    padding: 4px;
+}
+
+.slash-menu-items::-webkit-scrollbar {
+    width: 6px;
+}
+
+.slash-menu-items::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.slash-menu-items::-webkit-scrollbar-thumb {
+    background: #e5e7eb;
+    border-radius: 3px;
+}
+
+.slash-menu-items::-webkit-scrollbar-thumb:hover {
+    background: #d1d5db;
+}
+
+/* Individual menu item */
+.slash-menu-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    width: 100%;
+    text-align: left;
+    transition: background-color 0.15s ease;
+}
+
+.slash-menu-item:hover,
+.slash-menu-item.selected {
+    background: #f3f4f6;
+}
+
+.slash-menu-item.selected {
+    background: #eff6ff;
+}
+
+/* Icon container */
+.slash-menu-item-icon {
+    color: var(--editor-text) !important;    /* force icon glyphs to use editor text color */
+    font-weight: 600;                         /* make the H1/H2 label bolder */
+    line-height: 1;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #8d98a2;
+    border-radius: 6px;
+    font-size: 18px;
+    flex-shrink: 0;
+    border: 1px solid #f3f4f6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Keep icon text black when selected, and ensure icon svg inherits color */
+.slash-menu-item.selected .slash-menu-item-icon {
+    color: var(--editor-text) !important;
+    background: #dbeafe;
+    border-color: #bfdbfe;
+}
+.slash-menu-item-icon svg,
+.slash-menu-item-icon svg * {
+    fill: currentColor !important;
+    stroke: currentColor !important;
+}
+
+/* Text content */
+.slash-menu-item-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-top: 2px;
+}
+
+.slash-menu-item-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #111827;
+    line-height: 1.4;
+}
+
+.slash-menu-item-description {
+    font-size: 12px;
+    color: #6b7280;
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Empty state */
+.slash-menu-empty {
+    padding: 24px 16px;
+    text-align: center;
+}
+
+.slash-menu-empty p {
+    color: #9ca3af !important;
+    font-size: 14px;
+    margin: 0;
+}
+
+/* Task list styles (special layout for task list items) */
+.tiptap-content ul[data-type="taskList"] {
+    list-style: none;
+    padding-left: 0;
+}
+
+.tiptap-content ul[data-type="taskList"] li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.tiptap-content ul[data-type="taskList"] li > label {
+    display: flex;
+    align-items: center;
+    margin-top: 2px;
+}
+
+.tiptap-content ul[data-type="taskList"] li > label > input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    border-radius: 3px;
+    border: 1px solid #d1d5db;
+}
+
+.tiptap-content ul[data-type="taskList"] li > div {
+    flex: 1;
+}
+
+.tiptap-content ul[data-type="taskList"] li[data-checked="true"] > div {
+    text-decoration: line-through;
+    color: #9ca3af !important;
 }

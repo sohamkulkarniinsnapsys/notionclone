@@ -1,0 +1,152 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  accounts      Account[]
+  sessions      Session[]
+  workspaces    WorkspaceMember[]
+}
+
+
+model Workspace {
+  id          String    @id @default(cuid())
+  name        String
+  ownerId     String
+  createdAt   DateTime  @default(now())
+  documents   Document[]
+  members     WorkspaceMember[]
+  invites     Invite[]
+}
+
+model WorkspaceMember {
+  id          String   @id @default(cuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+  role        String   @default("member")
+  createdAt   DateTime @default(now())
+  @@unique([userId, workspaceId])
+}
+
+model Document {
+  id           String   @id @default(cuid())
+  title        String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId  String
+  ownerId      String   // owner of the document
+  createdBy    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  yjsSnapshot  Bytes?    // latest binary snapshot stored inline
+  yjsSnapshots YjsSnapshot[]  // historical snapshots in separate table
+  contentJson  Json?
+  htmlContent  String?  // canonical HTML for indexing
+  collaborators Collaborator[]
+  snapshots    DocumentSnapshot[]
+}
+
+model YjsSnapshot {
+  id          String   @id @default(cuid())
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId  String
+  snapshot    Bytes
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([documentId])
+}
+
+model Invite {
+  id            String    @id @default(cuid())
+  workspace     Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId   String?
+  documentId    String?   // invite can be for specific document
+  email         String
+  role          String    @default("member") // owner | admin | editor | viewer | member
+  token         String    @unique
+  status        String    @default("pending") // pending | accepted | declined | expired
+  invitedById   String?   // user who sent the invite
+  createdAt     DateTime  @default(now())
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+
+  @@index([workspaceId, email])
+  @@index([documentId, email])
+  @@index([token])
+}
+
+// NextAuth models used by Prisma Adapter. If your repo already has these, merge carefully.
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?
+  access_token       String?
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id])
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  @@unique([identifier, token])
+}
+
+// Collaborator model for document-level permissions
+model Collaborator {
+  id          String   @id @default(cuid())
+  userId      String
+  documentId  String
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  role        String   // owner | admin | editor | viewer
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, documentId])
+  @@index([documentId])
+  @@index([userId])
+}
+
+// DocumentSnapshot model for canonical content storage
+model DocumentSnapshot {
+  id          String   @id @default(cuid())
+  documentId  String
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  snapshot    Bytes    // Yjs binary snapshot
+  htmlContent String?  // HTML representation
+  jsonContent Json?    // JSON representation
+  actorId     String?  // user who triggered the save
+  createdAt   DateTime @default(now())
+
+  @@index([documentId, createdAt])
+}
