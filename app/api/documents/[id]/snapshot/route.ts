@@ -2,23 +2,11 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { canAccessDocument } from "@/lib/permissions";
-
-/**
- * POST /api/documents/[id]/snapshot
- *
- * Accepts:
- *  - JSON: { snapshotBase64: "<base64 string>" }
- *  - OR raw binary POST (arrayBuffer)
- *
- * Persists:
- *  - document.yjsSnapshot (Bytes)
- *  - documentSnapshot (history row)
- *
- * Note: TypeScript/Prisma types require a Uint8Array backed by a plain ArrayBuffer.
- * We create such a Uint8Array and then cast to `any` at the Prisma call sites to
- * satisfy the compiler while keeping runtime safety.
- */
+import { checkDocumentPermission } from "@/lib/services/permissions";
+import {
+  getDocumentSnapshot,
+  saveDocumentSnapshot,
+} from "@/lib/services/documentService";
 
 type ContextWithParams = {
   params?: Promise<{ id: string }> | { id: string };
@@ -48,12 +36,28 @@ function normalizeToArrayBufferBackedUint8Array(bytes: Uint8Array): Uint8Array {
   return out;
 }
 
+/**
+ * POST /api/documents/[id]/snapshot
+ *
+ * Accepts:
+ *  - JSON: { snapshotBase64: "<base64 string>" }
+ *  - OR raw binary POST (arrayBuffer)
+ *
+ * Persists:
+ *  - document.yjsSnapshot (Bytes)
+ *  - documentSnapshot (history row)
+ *
+ * SECURITY: Requires canEdit permission
+ */
 export async function POST(req: Request, context: ContextWithParams) {
   try {
-    // Auth
+    // Check authentication
     const session = await getSession();
-    if (!session?.user) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: "Unauthorized - Authentication required" },
+        { status: 401 },
+      );
     }
 
     // Resolve params which may be Promise or plain object
@@ -62,9 +66,35 @@ export async function POST(req: Request, context: ContextWithParams) {
       maybeParams && "then" in maybeParams ? await maybeParams : maybeParams;
     const id = params?.id;
     if (!id) {
-      return NextResponse.json({ error: "missing_id" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing document ID" },
+        { status: 400 },
+      );
     }
 
+    // SECURITY: Check permissions BEFORE accepting any data
+    const permissions = await checkDocumentPermission(session.user.id, id);
+
+    if (!permissions.canEdit) {
+      console.warn(
+        `[SNAPSHOT] User ${session.user.id} attempted to save snapshot for document ${id} without edit permission`,
+      );
+      return NextResponse.json(
+        {
+          error:
+            "Forbidden - You do not have edit permission for this document",
+          permissions: {
+            canView: permissions.canView,
+            canEdit: false,
+            canAdmin: permissions.canAdmin,
+            isOwner: permissions.isOwner,
+          },
+        },
+        { status: 403 },
+      );
+    }
+
+    // Parse incoming snapshot data
     const contentType = (req.headers.get("content-type") || "").toLowerCase();
     let incomingBytes: Uint8Array | null = null;
 
@@ -105,75 +135,57 @@ export async function POST(req: Request, context: ContextWithParams) {
       );
     }
 
-    // Normalize into fresh ArrayBuffer-backed Uint8Array (ensures runtime correctness)
+    // Normalize into fresh ArrayBuffer-backed Uint8Array
     const snapshotForPrisma =
       normalizeToArrayBufferBackedUint8Array(incomingBytes);
+    const buffer = Buffer.from(snapshotForPrisma);
 
-    // Ensure doc exists
-    const doc = await prisma.document.findUnique({
-      where: { id },
-      select: { id: true, workspaceId: true },
-    });
-    if (!doc) {
+    // Save snapshot using service (includes permission check)
+    const saved = await saveDocumentSnapshot(id, session.user.id, buffer);
+
+    if (!saved) {
       return NextResponse.json(
-        { error: "document_not_found" },
-        { status: 404 },
+        { error: "Failed to save document snapshot" },
+        { status: 500 },
       );
     }
 
-    // === IMPORTANT: cast to satisfy compiler ===
-    // This is safe because we created `snapshotForPrisma` as a fresh ArrayBuffer-backed Uint8Array.
-
-    // Persist inline snapshot (document.yjsSnapshot)
-    const updated = await prisma.document.update({
-      where: { id },
-      data: {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        yjsSnapshot: snapshotForPrisma as any,
-        updatedAt: new Date(),
-      },
-      select: { id: true, updatedAt: true },
-    });
-
-    // Create DocumentSnapshot history row
-    await prisma.documentSnapshot.create({
-      data: {
-        documentId: id,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        snapshot: snapshotForPrisma as any,
-        htmlContent: null,
-        actorId: session.user.id,
-      },
-    });
-
     return NextResponse.json({
       ok: true,
-      id: updated.id,
-      updatedAt: updated.updatedAt,
+      id,
+      savedAt: new Date().toISOString(),
     });
   } catch (err: unknown) {
     console.error("[POST] /api/documents/[id]/snapshot error:", err);
     const prismaError = err as { code?: string };
     if (prismaError?.code === "P2025") {
       return NextResponse.json(
-        { error: "document_not_found" },
+        { error: "Document not found" },
         { status: 404 },
       );
     }
-    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
 
 /**
  * GET /api/documents/[id]/snapshot
  * Returns the document snapshot as base64 encoded string
+ *
+ * SECURITY: Requires canView permission
  */
 export async function GET(req: Request, context: ContextWithParams) {
   try {
-    // Auth
+    // Check authentication
     const session = await getSession();
-    if (!session?.user) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: "Unauthorized - Authentication required" },
+        { status: 401 },
+      );
     }
 
     // Resolve params which may be Promise or plain object
@@ -182,49 +194,52 @@ export async function GET(req: Request, context: ContextWithParams) {
       maybeParams && "then" in maybeParams ? await maybeParams : maybeParams;
     const id = params?.id;
     if (!id) {
-      return NextResponse.json({ error: "missing_id" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing document ID" },
+        { status: 400 },
+      );
     }
 
-    // Fetch document with snapshot
-    const doc = await prisma.document.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        workspaceId: true,
-        yjsSnapshot: true,
-      },
-    });
+    // SECURITY: Check permissions BEFORE returning any data
+    const permissions = await checkDocumentPermission(session.user.id, id);
 
-    if (!doc) {
+    if (!permissions.canView) {
+      console.warn(
+        `[SNAPSHOT] User ${session.user.id} attempted to view snapshot for document ${id} without view permission`,
+      );
       return NextResponse.json(
-        { error: "document_not_found" },
+        {
+          error: "Forbidden - You do not have access to this document",
+          permissions: {
+            canView: false,
+            canEdit: false,
+            canAdmin: false,
+            isOwner: false,
+          },
+        },
+        { status: 403 },
+      );
+    }
+
+    // Get snapshot using service (includes permission check)
+    const snapshotData = await getDocumentSnapshot(id, session.user.id);
+
+    if (!snapshotData) {
+      return NextResponse.json(
+        { error: "Document not found" },
         { status: 404 },
       );
     }
 
-    // Check if user has access to this document (checks both Collaborator and WorkspaceMember)
-    const hasAccess = await canAccessDocument(session.user.id, id);
-
-    if (!hasAccess) {
-      console.error(
-        "[SNAPSHOT] User",
-        session.user.id,
-        "does not have access to document",
-        id,
-      );
-      return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    }
-
     // Convert snapshot to base64 if it exists
     let snapshotBase64: string | null = null;
-    if (doc.yjsSnapshot) {
+    if (snapshotData.snapshot) {
       try {
-        // Convert Buffer/Uint8Array to base64
-        if (Buffer.isBuffer(doc.yjsSnapshot)) {
-          snapshotBase64 = doc.yjsSnapshot.toString("base64");
+        if (Buffer.isBuffer(snapshotData.snapshot)) {
+          snapshotBase64 = snapshotData.snapshot.toString("base64");
         } else {
           // Handle Uint8Array
-          const buffer = Buffer.from(doc.yjsSnapshot);
+          const buffer = Buffer.from(snapshotData.snapshot);
           snapshotBase64 = buffer.toString("base64");
         }
       } catch (err) {
@@ -234,17 +249,26 @@ export async function GET(req: Request, context: ContextWithParams) {
 
     return NextResponse.json({
       snapshotBase64,
-      documentId: doc.id,
+      documentId: id,
+      permissions: {
+        canView: snapshotData.permissions.canView,
+        canEdit: snapshotData.permissions.canEdit,
+        canAdmin: snapshotData.permissions.canAdmin,
+        isOwner: snapshotData.permissions.isOwner,
+      },
     });
   } catch (err: unknown) {
-    console.error("[POST] /api/documents/[id]/snapshot error:", err);
+    console.error("[GET] /api/documents/[id]/snapshot error:", err);
     const prismaError = err as { code?: string };
     if (prismaError?.code === "P2025") {
       return NextResponse.json(
-        { error: "document_not_found" },
+        { error: "Document not found" },
         { status: 404 },
       );
     }
-    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

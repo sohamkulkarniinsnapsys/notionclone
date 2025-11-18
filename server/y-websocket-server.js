@@ -9,6 +9,7 @@ import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
+import { checkDocumentPermission } from "./permissions.js";
 
 dotenv.config();
 
@@ -16,8 +17,8 @@ dotenv.config();
 const port = process.env.PORT
   ? Number(process.env.PORT)
   : process.env.YWS_PORT
-  ? Number(process.env.YWS_PORT)
-  : 1234;
+    ? Number(process.env.YWS_PORT)
+    : 1234;
 
 const secret = process.env.NEXTAUTH_SECRET;
 const ADMIN_TOKEN = process.env.YWS_ADMIN_TOKEN;
@@ -70,7 +71,10 @@ function safeSend(ws, data) {
       if (err) {
         // Increment a per-socket counter to detect repeated failures
         ws.__sendErrorCount = (ws.__sendErrorCount || 0) + 1;
-        console.warn("[safeSend] send error:", err && err.code ? err.code : err);
+        console.warn(
+          "[safeSend] send error:",
+          err && err.code ? err.code : err,
+        );
 
         // If repeated errors, terminate the socket to avoid repeated ECANCELED logs
         if (ws.__sendErrorCount >= MAX_SEND_ERRORS) {
@@ -88,7 +92,10 @@ function safeSend(ws, data) {
     });
     return true;
   } catch (err) {
-    console.warn("[safeSend] unexpected send error:", err && err.code ? err.code : err);
+    console.warn(
+      "[safeSend] unexpected send error:",
+      err && err.code ? err.code : err,
+    );
     try {
       ws.terminate();
     } catch (e) {
@@ -180,7 +187,10 @@ const server = http.createServer(async (req, res) => {
         // Close all connections for this room
         let closedConnections = 0;
         wss.clients.forEach((client) => {
-          if (client.room === documentId && client.readyState === WebSocket.OPEN) {
+          if (
+            client.room === documentId &&
+            client.readyState === WebSocket.OPEN
+          ) {
             client.close(1000, "Room closed by admin");
             closedConnections++;
           }
@@ -237,7 +247,8 @@ const server = http.createServer(async (req, res) => {
     docs.forEach((doc, docName) => {
       const awareness = awarenessInstances.get(docName);
       const connections = Array.from(wss.clients).filter(
-        (client) => client.room === docName && client.readyState === WebSocket.OPEN,
+        (client) =>
+          client.room === docName && client.readyState === WebSocket.OPEN,
       ).length;
 
       rooms.push({
@@ -312,17 +323,26 @@ const server = http.createServer(async (req, res) => {
 
         // Broadcast to all clients in room
         const otherClients = Array.from(wss.clients).filter(
-          (client) => client.readyState === WebSocket.OPEN && client.room === documentId,
+          (client) =>
+            client.readyState === WebSocket.OPEN && client.room === documentId,
         );
 
         otherClients.forEach((client) => {
           safeSend(client, payloadBuf);
         });
 
-        console.log(`[ADMIN/BROADCAST] meta applied for ${documentId}, sent to ${otherClients.length} client(s)`);
+        console.log(
+          `[ADMIN/BROADCAST] meta applied for ${documentId}, sent to ${otherClients.length} client(s)`,
+        );
 
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ success: true, documentId, sent: otherClients.length }));
+        res.end(
+          JSON.stringify({
+            success: true,
+            documentId,
+            sent: otherClients.length,
+          }),
+        );
       } catch (err) {
         console.error("[ADMIN/BROADCAST] error handling request:", err);
         res.writeHead(500, { "Content-Type": "application/json" });
@@ -342,46 +362,84 @@ const wss = new WebSocketServer({ server });
 
 console.log("Starting y-websocket server...");
 
-wss.on("connection", (ws, req) => {
+wss.on("connection", async (ws, req) => {
   const url = new URL(req.url || "", `http://${req.headers.host}`);
   const token = url.searchParams.get("token");
   const docName = url.pathname.substring(1);
 
   if (!docName) {
-    console.warn("Connection attempt without document ID");
+    console.warn("[WS] Connection attempt without document ID");
     ws.close(1008, "Document ID required");
     return;
   }
 
-  console.log(`New connection attempt for document: ${docName}`);
+  console.log(`[WS] New connection attempt for document: ${docName}`);
 
-  // Token validation (optional in dev)
-  if (token) {
-    try {
-      const decoded = jwt.verify(token, secret);
-      console.log(
-        `Token verified for user: ${decoded.userId || decoded.email}`,
+  // SECURITY: Token validation is REQUIRED
+  let userId = null;
+  let userEmail = null;
+
+  if (!token) {
+    console.error(`[WS] No token provided for document: ${docName}`);
+    ws.close(1008, "Authentication required - No token provided");
+    return;
+  }
+
+  try {
+    const decoded = jwt.verify(token, secret);
+    userId = decoded.userId || decoded.sub;
+    userEmail = decoded.email;
+    console.log(`[WS] Token verified for user: ${userId} (${userEmail})`);
+
+    if (decoded.docId && decoded.docId !== docName) {
+      console.warn(
+        `[WS] Token docId mismatch: ${decoded.docId} !== ${docName}`,
       );
-
-      if (decoded.docId !== docName) {
-        console.warn(`Token docId mismatch: ${decoded.docId} !== ${docName}`);
-      }
-    } catch (err) {
-      console.error("Token verification failed:", err.message);
-      console.warn("Allowing connection without valid token (dev mode)");
     }
-  } else {
-    console.warn("No token provided, allowing connection (dev mode)");
+  } catch (err) {
+    console.error(
+      `[WS] Token verification failed for ${docName}:`,
+      err.message,
+    );
+    ws.close(1008, "Authentication failed - Invalid token");
+    return;
+  }
+
+  // SECURITY: Check document permissions BEFORE allowing connection
+  try {
+    const permissions = await checkDocumentPermission(userId, docName);
+
+    if (!permissions.canView) {
+      console.warn(
+        `[WS] User ${userId} denied access to document ${docName} - no view permission`,
+      );
+      ws.close(1008, "Forbidden - You do not have access to this document");
+      return;
+    }
+
+    console.log(
+      `[WS] User ${userId} granted access to ${docName} (canEdit: ${permissions.canEdit})`,
+    );
+
+    // Store user info and permissions on the WebSocket
+    ws.userId = userId;
+    ws.userEmail = userEmail;
+    ws.permissions = permissions;
+    ws.room = docName;
+    ws.isAlive = true;
+    ws.__sendErrorCount = 0;
+  } catch (err) {
+    console.error(
+      `[WS] Permission check failed for user ${userId}, document ${docName}:`,
+      err,
+    );
+    ws.close(1008, "Internal error - Permission check failed");
+    return;
   }
 
   // Get or create doc and awareness for this room
   const doc = getYDoc(docName);
   const awareness = getAwareness(docName, wss);
-
-  // Store room info on the WebSocket
-  ws.room = docName;
-  ws.isAlive = true;
-  ws.__sendErrorCount = 0;
 
   // When a new socket attaches, if there is a server-side meta map we should send it as part
   // of the initial sync step1 (syncProtocol.writeSyncStep1 covers that).
@@ -393,6 +451,38 @@ wss.on("connection", (ws, req) => {
       const messageType = decoding.readVarUint(decoder);
 
       if (messageType === messageSync) {
+        // SECURITY: Check if this is a document update (Step 2)
+        // Step 1 = server sends state, Step 2 = client sends updates
+        // We need to check if the message contains updates that modify the document
+        const decoderCopy = decoding.createDecoder(uint8Array);
+        decoding.readVarUint(decoderCopy); // skip messageType
+        const syncMessageType = decoding.readVarUint(decoderCopy);
+
+        // syncMessageType: 0 = SyncStep1, 1 = SyncStep2, 2 = Update
+        const isDocumentUpdate = syncMessageType === 1 || syncMessageType === 2;
+
+        if (isDocumentUpdate && !ws.permissions.canEdit) {
+          console.warn(
+            `[WS] User ${ws.userId} attempted to edit document ${docName} without permission`,
+          );
+
+          // Send error message back to client
+          const errorMsg = JSON.stringify({
+            type: "error",
+            error: "Forbidden - You have read-only access to this document",
+            permissions: ws.permissions,
+          });
+
+          try {
+            ws.send(errorMsg);
+          } catch (sendErr) {
+            console.error("[WS] Failed to send error message:", sendErr);
+          }
+
+          // Drop the update - do not process or broadcast
+          return;
+        }
+
         // Sync protocol message - handle it and get response
         const encoder = encoding.createEncoder();
         encoding.writeVarUint(encoder, messageSync);
@@ -412,7 +502,9 @@ wss.on("connection", (ws, req) => {
         // Forward the original bytes so other clients apply the same update
         const otherClients = Array.from(wss.clients).filter(
           (client) =>
-            client !== ws && client.readyState === WebSocket.OPEN && client.room === docName,
+            client !== ws &&
+            client.readyState === WebSocket.OPEN &&
+            client.room === docName,
         );
 
         if (otherClients.length > 0) {
@@ -422,7 +514,7 @@ wss.on("connection", (ws, req) => {
           });
         }
       } else if (messageType === messageAwareness) {
-        // Awareness protocol message
+        // Awareness protocol message - allowed for all users (view presence)
         awarenessProtocol.applyAwarenessUpdate(
           awareness,
           decoding.readVarUint8Array(decoder),
@@ -430,18 +522,24 @@ wss.on("connection", (ws, req) => {
         );
       }
     } catch (err) {
-      console.error("Error processing message:", err);
+      console.error("[WS] Error processing message:", err);
     }
   });
 
   ws.on("close", () => {
-    console.log(`WebSocket closed for document: ${docName}`);
+    console.log(
+      `[WS] WebSocket closed for document: ${docName}, user: ${ws.userId}`,
+    );
 
     // Remove awareness state for this client
     try {
       const clientID = ws.clientID;
       if (typeof clientID !== "undefined") {
-        awarenessProtocol.removeAwarenessStates(awareness, [clientID], "disconnect");
+        awarenessProtocol.removeAwarenessStates(
+          awareness,
+          [clientID],
+          "disconnect",
+        );
       }
     } catch (e) {
       // best-effort
@@ -450,7 +548,8 @@ wss.on("connection", (ws, req) => {
     // Clean up doc if no more connections
     setTimeout(() => {
       const hasConnections = Array.from(wss.clients).some(
-        (client) => client.room === docName && client.readyState === WebSocket.OPEN,
+        (client) =>
+          client.room === docName && client.readyState === WebSocket.OPEN,
       );
 
       if (!hasConnections) {
@@ -485,13 +584,18 @@ wss.on("connection", (ws, req) => {
     encoding.writeVarUint(awarenessEncoder, messageAwareness);
     encoding.writeVarUint8Array(
       awarenessEncoder,
-      awarenessProtocol.encodeAwarenessUpdate(awareness, Array.from(awarenessStates.keys())),
+      awarenessProtocol.encodeAwarenessUpdate(
+        awareness,
+        Array.from(awarenessStates.keys()),
+      ),
     );
     safeSend(ws, encoding.toUint8Array(awarenessEncoder));
   }
 
   console.log(`✅ WebSocket connection established for document: ${docName}`);
-  console.log(`📊 Active connections: ${wss.clients.size}, Rooms: ${docs.size}`);
+  console.log(
+    `📊 Active connections: ${wss.clients.size}, Rooms: ${docs.size}`,
+  );
 });
 
 // Ping clients periodically to keep connections alive
