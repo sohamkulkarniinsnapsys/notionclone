@@ -22,7 +22,7 @@ export default function ForbiddenPage() {
           borderRadius: 12,
           boxShadow: "var(--shadow)",
           padding: 32,
-          background: "var(--color-bg-secondary)",
+          background: "var(--color-bg-secondary)", 
         }}
       >
         <h1 style={{ fontSize: 32, marginBottom: 8 }}>403 — Forbidden</h1>
