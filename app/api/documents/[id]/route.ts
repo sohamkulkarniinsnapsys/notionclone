@@ -3,11 +3,15 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 
-async function resolveParams(context: any) {
+type ContextWithParams = {
+  params?: Promise<{ id: string }> | { id: string };
+};
+
+async function resolveParams(context: ContextWithParams) {
   // Next.js sometimes provides context.params as a plain object or as a Promise.
   const maybePromise = context?.params;
   if (!maybePromise) return null;
-  if (typeof maybePromise.then === "function") {
+  if ("then" in maybePromise && typeof maybePromise.then === "function") {
     return await maybePromise;
   }
   return maybePromise;
@@ -16,7 +20,7 @@ async function resolveParams(context: any) {
 /**
  * GET /api/documents/[id]
  */
-export async function GET(req: Request, context: any) {
+export async function GET(req: Request, context: ContextWithParams) {
   try {
     // Check authentication
     const session = await getSession();
@@ -78,9 +82,9 @@ export async function GET(req: Request, context: any) {
 
 /**
  * POST /api/documents/[id]
- * Accepts binary body and persists as yjsSnapshot
+ * Accepts binary body and persists as yjsSnapshot  
  */
-export async function POST(req: Request, context: any) {
+export async function POST(req: Request, context: ContextWithParams) {
   try {
     // Check authentication
     const session = await getSession();
@@ -122,9 +126,10 @@ export async function POST(req: Request, context: any) {
     });
 
     return NextResponse.json({ ok: true, id: updated.id });
-  } catch (err: any) {
+  } catch (err: unknown) {
     // P2025 is Prisma "Record to update not found"
-    if (err?.code === "P2025") {
+    const prismaError = err as { code?: string };
+    if (prismaError?.code === "P2025") {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
     console.error("POST /api/documents/[id] error", err);

@@ -6,6 +6,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import BulletList from "@tiptap/extension-bullet-list"
 import OrderedList from "@tiptap/extension-ordered-list"
+import { PageBlock } from '../extensions/PageBlock'
 
 type Props = {
   docId: string
@@ -23,6 +24,7 @@ export default function TiptapEditor({ docId, initialContent }: Props) {
       Placeholder.configure({
         placeholder: "Start writing here...",
       }),
+      PageBlock,
     ],
     content: initialContent ?? '<p></p>',
     immediatelyRender: false,

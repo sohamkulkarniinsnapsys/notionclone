@@ -83,9 +83,10 @@ export default async function DocumentsListPage({ params }: Props) {
                 display: "block",
                 transition: "background-color 0.2s",
               }}
+              aria-label={`Open document ${doc.title && doc.title.trim() ? doc.title : "Untitled"}`}
             >
               <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                {doc.title}
+                {doc.title && doc.title.trim() ? doc.title : "Untitled"}
               </div>
               <div style={{ fontSize: 14, color: "#666" }}>
                 Last updated: {new Date(doc.updatedAt).toLocaleDateString()}

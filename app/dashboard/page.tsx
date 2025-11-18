@@ -64,7 +64,10 @@ export default async function DashboardPage() {
     }
     const wsId = String(formData.get("workspaceId") || "");
     if (!wsId) return;
-    const title = String(formData.get("title") || "Untitled");
+
+    // Use empty string as initial title (user will name it in-editor)
+    // This relies on your DB allowing empty string (Prisma: String is required but can be empty)
+    const title = String(formData.get("title") ?? "").trim();
 
     // Verify access
     const member = await prisma.workspaceMember.findFirst({
@@ -74,14 +77,18 @@ export default async function DashboardPage() {
 
     const doc = await prisma.document.create({
       data: {
-        title,
+        title: title, // could be "" — editor will prompt user to name
         workspaceId: wsId,
         createdBy: sessionInner.user.id,
         ownerId: sessionInner.user.id,
       },
       select: { id: true, workspaceId: true },
     });
-    redirect(`/workspace/${doc.workspaceId}/documents/${doc.id}`);
+
+    // Redirect to document and flag it as newly created so the editor can auto-open the title input
+    redirect(
+      `/workspace/${doc.workspaceId}/documents/${doc.id}${title ? "" : "?new=true"}`
+    );
   }
 
   // Create a new workspace action

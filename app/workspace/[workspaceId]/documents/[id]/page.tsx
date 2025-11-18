@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
@@ -68,6 +68,28 @@ export default function DocPage() {
   const docId = docIdRaw ? String(docIdRaw) : null;
   const workspaceId = params?.workspaceId ?? null;
 
+  const searchParams = useSearchParams();
+  const isNewRouting = (searchParams?.get?.("new") ?? "") === "true";
+
+  useEffect(() => {
+    try {
+      if (workspaceId) {
+        (window as any).__CURRENT_WORKSPACE_ID = workspaceId;
+        console.debug("[DocPage] __CURRENT_WORKSPACE_ID set ->", workspaceId);
+        return () => {
+          try {
+            delete (window as any).__CURRENT_WORKSPACE_ID;
+            console.debug("[DocPage] __CURRENT_WORKSPACE_ID removed");
+          } catch (e) {
+            /* ignore cleanup errors */
+          }
+        };
+      }
+    } catch (e) {
+      console.warn("[DocPage] Failed to set global workspace id", e);
+    }
+  }, [workspaceId]);
+
   // Get authenticated session for user info
   const { data: session, status: sessionStatus } = useSession();
 
@@ -84,75 +106,92 @@ export default function DocPage() {
   const [isSaving, setIsSaving] = useState(false);
 
   // User info derived from session - deterministic colors
-  const [user, setUser] = useState<{
-    id: string;
-    name: string;
-    email: string;
-    avatarUrl: string | null;
-    color: string;
-  } | null>(null);
+  // Use useMemo to prevent user object from changing on every render
+  const user = useMemo(() => {
+    if (sessionStatus === "loading") return null;
 
-  // Initialize user from session data
-  useEffect(() => {
-    if (sessionStatus === "loading") return;
-
-    if (session?.user && !user) {
+    if (session?.user) {
       const userId =
         (session.user as any).id || session.user.email || "anonymous";
       const displayName =
         (session.user as any).name || session.user.email || "Anonymous";
       const deterministicColor = getColorForUserId(userId);
 
-      setUser({
+      return {
         id: userId,
         name: displayName,
         email: (session.user as any).email || "",
         avatarUrl: (session.user as any).image || null,
         color: deterministicColor,
-      });
+      };
+    }
 
-      console.log("[AUTH] User initialized from session:", {
-        id: userId,
-        name: displayName,
-        color: deterministicColor,
-      });
-    } else if (sessionStatus === "unauthenticated" && !user) {
-      // Fallback for unauthenticated (shouldn't happen on protected routes)
+    if (sessionStatus === "unauthenticated") {
+      // Fallback for unauthenticated (protected routes should prevent this)
       const fallbackId = "guest-" + Date.now();
-      setUser({
+      return {
         id: fallbackId,
         name: "Guest",
         email: "",
         avatarUrl: null,
         color: getColorForUserId(fallbackId),
-      });
-      console.warn("[AUTH] No session found, using guest fallback");
+      };
     }
-  }, [session, sessionStatus, user]);
 
-  // Fetch document metadata
+    return null;
+  }, [session, sessionStatus]);
+
+  // Log user initialization only when it changes
+  useEffect(() => {
+    if (user) {
+      console.log("[AUTH] User initialized from session:", {
+        id: user.id,
+        name: user.name,
+        color: user.color,
+      });
+    }
+  }, [user?.id]);
+
+  // Fetch document metadata (separate endpoint)
   useEffect(() => {
     if (!docId) return;
 
-    const fetchDocument = async () => {
+    const fetchDocumentMeta = async () => {
+      setIsLoadingDoc(true);
       try {
-        const response = await fetch(`/api/documents/${docId}`);
-        if (response.ok) {
-          const data = await response.json();
-          setDocumentTitle(data.document?.title || "Untitled");
-          setTitleInput(data.document?.title || "Untitled");
+        const res = await fetch(
+          `/api/documents/${encodeURIComponent(docId)}/meta`,
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const title = data?.document?.title ?? "";
+          // Title may be empty string (new doc)
+          setDocumentTitle(title);
+          setTitleInput(title);
+          console.log("[META] Document metadata loaded:", { title });
+
+          // If this route was flagged as new OR title is empty, enter edit mode
+          if (isNewRouting || !title || title.trim() === "") {
+            setIsEditingTitle(true);
+            // focus will be handled by input's autoFocus prop
+          }
         } else {
-          console.error("Failed to fetch document");
+          let errMsg = `Failed to fetch document metadata (status ${res.status})`;
+          try {
+            const errData = await res.json();
+            if (errData?.error) errMsg += `: ${errData.error}`;
+          } catch {}
+          console.warn(errMsg);
         }
       } catch (error) {
-        console.error("Error fetching document:", error);
+        console.error("Error fetching document metadata:", error);
       } finally {
         setIsLoadingDoc(false);
       }
     };
 
-    fetchDocument();
-  }, [docId]);
+    fetchDocumentMeta();
+  }, [docId, isNewRouting]);
 
   // Handle title edit
   const handleTitleSave = async () => {
@@ -164,26 +203,76 @@ export default function DocPage() {
     const trimmedTitle = titleInput.trim();
     const previousTitle = documentTitle;
 
-    // Optimistic update
+    // Optimistic UI update
     setDocumentTitle(trimmedTitle);
     setIsEditingTitle(false);
 
+    // Best-effort: write title into Y.Doc meta so other collaborators see change immediately
     try {
-      const response = await fetch(`/api/documents/${docId}/rename`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: trimmedTitle }),
-      });
+      const localYdoc = ydocRef.current ?? ydoc;
+      if (localYdoc) {
+        localYdoc.transact(() => {
+          const meta = localYdoc.getMap("meta");
+          meta.set("title", trimmedTitle);
+        });
+        console.log("[DocPage] wrote title to Y.Doc meta:", trimmedTitle);
+      }
+    } catch (e) {
+      console.warn("[DocPage] failed to write title into ydoc meta:", e);
+    }
+
+    // Persist to server (authoritative)
+    try {
+      const response = await fetch(
+        `/api/documents/${encodeURIComponent(docId)}/rename`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: trimmedTitle }),
+        },
+      );
 
       if (!response.ok) {
-        // Rollback on error
+        const bodyText = await response.text().catch(() => "");
+        console.error(
+          "Failed to rename document via API:",
+          response.status,
+          bodyText,
+        );
+        // Roll back on error
         setDocumentTitle(previousTitle);
         setTitleInput(previousTitle);
-        alert("Failed to rename document");
+        alert("Failed to rename document. See console for details.");
+        return;
+      }
+
+      // Keep UI synced with server returned title if provided
+      try {
+        const data = await response.json();
+        if (data?.document?.title) {
+          setDocumentTitle(data.document.title);
+          setTitleInput(data.document.title);
+
+          // Broadcast title change event so PageBlock components can update
+          try {
+            const event = new CustomEvent("document-title-changed", {
+              detail: { docId, title: data.document.title },
+            });
+            window.dispatchEvent(event);
+            console.log(
+              "[DocPage] Broadcasted title change event:",
+              data.document.title,
+            );
+          } catch (e) {
+            console.warn("[DocPage] Failed to broadcast title change:", e);
+          }
+        }
+      } catch (e) {
+        /* ignore */
       }
     } catch (error) {
       console.error("Error renaming document:", error);
-      // Rollback on error
+      // Roll back on error
       setDocumentTitle(previousTitle);
       setTitleInput(previousTitle);
       alert("Error renaming document");
@@ -196,9 +285,12 @@ export default function DocPage() {
 
     setIsDeleting(true);
     try {
-      const response = await fetch(`/api/documents/${docId}/delete`, {
-        method: "POST",
-      });
+      const response = await fetch(
+        `/api/documents/${encodeURIComponent(docId)}/delete`,
+        {
+          method: "POST",
+        },
+      );
 
       if (response.ok) {
         // Redirect to workspace
@@ -243,15 +335,42 @@ export default function DocPage() {
     );
   }, [awareness]);
 
+  // Use ref to track if already initialized to prevent re-initialization
+  const isInitializedRef = useRef(false);
+  const currentDocIdRef = useRef<string | null>(null);
+  const currentUserIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     const docIdSafe = docId as string;
     if (!docIdSafe || !user) {
- 
       if (!docId) {
         setError("No document ID provided");
       }
       return;
     }
+
+    // Prevent re-initialization if doc and user haven't changed
+    if (
+      isInitializedRef.current &&
+      currentDocIdRef.current === docIdSafe &&
+      currentUserIdRef.current === user.id
+    ) {
+      console.log("[INIT] Already initialized, skipping re-init");
+      return;
+    }
+
+    // If docId or userId changed, we need to cleanup and reinit
+    if (
+      isInitializedRef.current &&
+      (currentDocIdRef.current !== docIdSafe ||
+        currentUserIdRef.current !== user.id)
+    ) {
+      console.log("[INIT] Document or user changed, will reinitialize");
+      isInitializedRef.current = false;
+    }
+
+    currentDocIdRef.current = docIdSafe;
+    currentUserIdRef.current = user.id;
 
     let mounted = true;
     let cleanupCalled = false;
@@ -262,7 +381,9 @@ export default function DocPage() {
 
     // Save debounce state
     let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-    const SAVE_DEBOUNCE_MS = 2000;
+    const SAVE_DEBOUNCE_MS = 30000; // 30 seconds to reduce server load and improve performance
+    let lastSaveTime = 0; // Track last save to prevent excessive saves
+    const MIN_SAVE_INTERVAL = 10000; // Minimum 10 seconds between saves</parameter>
 
     const cleanup = () => {
       if (cleanupCalled) return;
@@ -278,12 +399,12 @@ export default function DocPage() {
             window.removeEventListener(
               "pagehide",
               pAny.__clearPresenceHandler,
-              { capture: true }
+              { capture: true },
             );
             window.removeEventListener(
               "beforeunload",
               pAny.__clearPresenceHandler,
-              { capture: true }
+              { capture: true },
             );
             delete pAny.__clearPresenceHandler;
           }
@@ -295,7 +416,7 @@ export default function DocPage() {
           if (pAny.__visibilityHandler) {
             document.removeEventListener(
               "visibilitychange",
-              pAny.__visibilityHandler
+              pAny.__visibilityHandler,
             );
             delete pAny.__visibilityHandler;
           }
@@ -328,7 +449,10 @@ export default function DocPage() {
               }
             }
           } catch (awaErr) {
-            console.warn("[CLEANUP] Error clearing provider awareness:", awaErr);
+            console.warn(
+              "[CLEANUP] Error clearing provider awareness:",
+              awaErr,
+            );
           }
         }
 
@@ -344,7 +468,7 @@ export default function DocPage() {
               } catch (err) {
                 console.warn(
                   "[CLEANUP] standalone setLocalState(null) failed:",
-                  err
+                  err,
                 );
               }
             }
@@ -355,14 +479,14 @@ export default function DocPage() {
               } catch (err) {
                 console.warn(
                   "[CLEANUP] Destroy standalone awareness failed:",
-                  err
+                  err,
                 );
               }
             }
           } catch (awaErr) {
             console.warn(
               "[CLEANUP] Error clearing standalone awareness:",
-              awaErr
+              awaErr,
             );
           }
         }
@@ -433,11 +557,14 @@ export default function DocPage() {
     async function saveSnapshotToServer(base64Snapshot: string) {
       try {
         // adapt endpoint to your server's expected payload
-        const res = await fetch(`/api/documents/${encodeURIComponent(docIdSafe)}/snapshot`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ snapshotBase64: base64Snapshot }),
-        });
+        const res = await fetch(
+          `/api/documents/${encodeURIComponent(docIdSafe)}/snapshot`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ snapshotBase64: base64Snapshot }),
+          },
+        );
         if (!res.ok) {
           console.warn("[SAVE] server save returned non-ok:", res.status);
           return false;
@@ -499,7 +626,11 @@ export default function DocPage() {
         // fallback synchronous XHR (last resort)
         try {
           const xhr = new XMLHttpRequest();
-          xhr.open("POST", `/api/documents/${encodeURIComponent(docIdSafe)}/snapshot`, false);
+          xhr.open(
+            "POST",
+            `/api/documents/${encodeURIComponent(docIdSafe)}/snapshot`,
+            false,
+          );
           xhr.setRequestHeader("Content-Type", "application/json");
           xhr.send(JSON.stringify({ snapshotBase64: base64 }));
           console.log("[SAVE] synchronous snapshot sent (fallback)");
@@ -511,21 +642,38 @@ export default function DocPage() {
       }
     }
 
-    // Debounced autosave scheduling
+    // Debounced autosave scheduling with rate limiting
     const scheduleSave = () => {
       if (!ydocRef.current) return;
+
+      // Clear existing timeout to restart debounce
       if (saveTimeout) clearTimeout(saveTimeout);
+
       saveTimeout = setTimeout(async () => {
         try {
+          // Check if enough time has passed since last save
+          const now = Date.now();
+          if (now - lastSaveTime < MIN_SAVE_INTERVAL) {
+            console.log("[SAVE] Skipping save, too soon after last save");
+            saveTimeout = null;
+            return;
+          }
+
           const update = Y.encodeStateAsUpdate(ydocRef.current!);
           const base64 = bytesToBase64(update);
-          // save locally first
+
+          // save locally first (fast, non-blocking)
           saveLocalBackup(base64);
+
           // attempt server save
           setIsSaving(true);
           const ok = await saveSnapshotToServer(base64);
           setIsSaving(false);
-          if (!ok) {
+
+          if (ok) {
+            lastSaveTime = now;
+            console.log("[SAVE] snapshot saved to server");
+          } else {
             console.warn("[SAVE] server save failed, kept local backup");
           }
         } catch (err) {
@@ -568,13 +716,15 @@ export default function DocPage() {
         // 1. Fetch persisted snapshot (server should return base64 of raw update bytes)
         let snapshotBase64: string | null = null;
         try {
-          const res = await fetch(`/api/documents/${encodeURIComponent(docIdSafe)}`);
+          const res = await fetch(
+            `/api/documents/${encodeURIComponent(docIdSafe)}/snapshot`,
+          );
           if (res.ok) {
             const data = await res.json();
             snapshotBase64 = data?.snapshotBase64 ?? null;
             console.log(
               "Fetched snapshot:",
-              snapshotBase64 ? `${snapshotBase64.length} chars` : "none"
+              snapshotBase64 ? `${snapshotBase64.length} chars` : "none",
             );
           } else {
             console.warn("Could not fetch snapshot, status:", res.status);
@@ -606,28 +756,27 @@ export default function DocPage() {
         ydocRef.current = ydoc;
         setYdoc(ydoc);
 
-        // Observe Y.Doc updates -> schedule autosave
+        // Observe Y.Doc updates -> schedule autosave (single, highly throttled mechanism)
+        // Using a single observer to prevent duplicate save triggers
+        let updateCount = 0;
         try {
-          // prefer 'update' event
+          // Use 'update' event but only trigger save every 10 updates to reduce overhead
           ydoc.on("update", () => {
-            scheduleSave();
+            updateCount++;
+            // Throttle: only schedule save every 10 updates (reduces save frequency by 10x)
+            if (updateCount % 10 === 0) {
+              scheduleSave();
+            }
           });
         } catch (e) {
-          // fallback to transaction-based strategy
-          try {
-            (ydoc as any).on("afterTransaction", () => {
-              scheduleSave();
-            });
-          } catch (e2) {
-            console.warn("[SAVE] Could not attach ydoc update listeners", e2);
-          }
+          console.warn("[SAVE] Could not attach ydoc update listener", e);
         }
 
         // 3. Fetch WebSocket token (if you use one)
         let token: string | null = null;
         try {
           const tokenRes = await fetch(
-            `/api/yjs/token?docId=${encodeURIComponent(docIdSafe)}`
+            `/api/yjs/token?docId=${encodeURIComponent(docIdSafe)}`,
           );
           if (tokenRes.ok) {
             const tokenData = await tokenRes.json();
@@ -645,8 +794,7 @@ export default function DocPage() {
         setStatus("connecting");
 
         // 4. Create provider (y-websocket)
-        const wsUrl =
-          process.env.NEXT_PUBLIC_Y_WS_URL ?? "ws://localhost:1234";
+        const wsUrl = process.env.NEXT_PUBLIC_Y_WS_URL ?? "ws://localhost:1234";
         console.log("Connecting to WebSocket:", wsUrl);
 
         const provider = new WebsocketProvider(wsUrl, docIdSafe, ydoc, {
@@ -691,8 +839,8 @@ export default function DocPage() {
                 clearTimeout(overallTimeout);
                 reject(
                   new Error(
-                    "Provider or component unmounted during awareness setup"
-                  )
+                    "Provider or component unmounted during awareness setup",
+                  ),
                 );
                 return;
               }
@@ -710,7 +858,7 @@ export default function DocPage() {
                 typeof providerAwareness.getStates === "function";
 
               console.log(
-                `[AWARENESS] attempt ${attempts} - hasAwareness:${!!providerAwareness} setLocalState:${hasSetLocalState} getStates:${hasGetStates}`
+                `[AWARENESS] attempt ${attempts} - hasAwareness:${!!providerAwareness} setLocalState:${hasSetLocalState} getStates:${hasGetStates}`,
               );
 
               if (
@@ -742,9 +890,7 @@ export default function DocPage() {
           const providerAwareness = await setupAwareness();
 
           if (!mounted) {
-            console.log(
-              "[INIT] Component unmounted, aborting awareness setup"
-            );
+            console.log("[INIT] Component unmounted, aborting awareness setup");
             return cleanup();
           }
 
@@ -756,11 +902,11 @@ export default function DocPage() {
                 "function")
           ) {
             throw new Error(
-              "Invalid awareness object returned from setupAwareness (missing setLocalState)"
+              "Invalid awareness object returned from setupAwareness (missing setLocalState)",
             );
           }
 
-          // Apply presence in a robust way
+          // Apply presence in a robust way (optimized, reduce logging)
           const applyLocalState = () => {
             try {
               const payload = {
@@ -775,69 +921,56 @@ export default function DocPage() {
               };
 
               const pAny = providerAwareness as any;
+              let stateSet = false;
+
               // try setLocalStateField first
               try {
                 if (typeof pAny.setLocalStateField === "function") {
                   pAny.setLocalStateField("user", payload.user);
-                  console.log(
-                    "[AWARENESS] setLocalStateField('user') ->",
-                    payload.user
-                  );
+                  stateSet = true;
+                  if (process.env.NODE_ENV === "development") {
+                    console.log(
+                      "[AWARENESS] Local state set via setLocalStateField",
+                    );
+                  }
                 }
               } catch (err) {
-                console.warn(
-                  "[AWARENESS] setLocalStateField failed, falling back",
-                  err
-                );
+                // Silently fall back
               }
 
               // ensure we call setLocalState as fallback
-              try {
-                if (typeof providerAwareness.setLocalState === "function") {
-                  providerAwareness.setLocalState(payload);
-                  console.log("[AWARENESS] setLocalState(payload) ->", payload);
-                }
-              } catch (err) {
-                console.warn("[AWARENESS] setLocalState(payload) failed", err);
-              }
-
-              // inspect presence quickly and retry once if empty
-              const dumpStates = () => {
+              if (!stateSet) {
                 try {
-                  const statesMap = providerAwareness.getStates
-                    ? providerAwareness.getStates()
-                    : null;
-                  const entries = statesMap ? Array.from(statesMap.entries()) : [];
-                  console.log(
-                    "[AWARENESS] getStates dump after setLocalState:",
-                    entries
-                  );
-                  return entries;
-                } catch (err) {
-                  console.warn("[AWARENESS] getStates() failed:", err);
-                  return [];
-                }
-              };
-
-              const entriesNow = dumpStates();
-              if (!entriesNow || entriesNow.length === 0) {
-                setTimeout(() => {
-                  try {
-                    const entriesRetry = dumpStates();
-                    if (!entriesRetry || entriesRetry.length === 0) {
-                      console.warn(
-                        "[AWARENESS] presence still empty after retry - server may delay broadcasts"
-                      );
-                    } else {
+                  if (typeof providerAwareness.setLocalState === "function") {
+                    providerAwareness.setLocalState(payload);
+                    stateSet = true;
+                    if (process.env.NODE_ENV === "development") {
                       console.log(
-                        "[AWARENESS] presence visible after retry",
-                        entriesRetry
+                        "[AWARENESS] Local state set via setLocalState",
                       );
                     }
-                  } catch (e) {
-                    /* ignore */
                   }
-                }, 500);
+                } catch (err) {
+                  console.warn("[AWARENESS] Failed to set local state", err);
+                }
+              }
+
+              // Only validate in development mode to reduce overhead
+              if (process.env.NODE_ENV === "development" && stateSet) {
+                // Single validation check without retries
+                setTimeout(() => {
+                  try {
+                    const statesMap = providerAwareness.getStates
+                      ? providerAwareness.getStates()
+                      : null;
+                    const entries = statesMap
+                      ? Array.from(statesMap.entries())
+                      : [];
+                    console.log("[AWARENESS] Active users:", entries.length);
+                  } catch (err) {
+                    // Ignore validation errors
+                  }
+                }, 1000);
               }
             } catch (err) {
               console.error("[AWARENESS] Failed to apply local state:", err);
@@ -870,7 +1003,8 @@ export default function DocPage() {
           // If provider looks connected now, apply immediately
           const providerAppearsConnected =
             providerAny &&
-            (providerAny.status === "connected" || providerAny.wsconnected === true);
+            (providerAny.status === "connected" ||
+              providerAny.wsconnected === true);
           if (providerAppearsConnected) {
             applyLocalState();
             applied = true;
@@ -883,80 +1017,102 @@ export default function DocPage() {
                 applied = true;
               }
             }, 1500);
-            (providerAny as any).__awarenessFallbackTimeout = fallbackApplyTimeout;
+            (providerAny as any).__awarenessFallbackTimeout =
+              fallbackApplyTimeout;
           }
 
           // Save awareness ref + state for UI
           awarenessRef.current = providerAwareness;
           setAwareness(providerAwareness);
 
-          // Visibility handling: clear presence quickly on hide, but don't destroy provider immediately.
+          // Visibility handling: optimized with debouncing to reduce overhead
+          let visibilityTimeout: NodeJS.Timeout | null = null;
           const onVisibilityChange = () => {
-            try {
-              const p = providerRef.current as any;
-              const a = (awarenessRef.current ?? (p && p.awareness)) as any;
-              if (!a) return;
+            // Debounce visibility changes to prevent rapid state changes
+            if (visibilityTimeout) {
+              clearTimeout(visibilityTimeout);
+            }
 
-              if (document.visibilityState === "hidden") {
-                // remove presence quickly
-                try {
-                  if (typeof a.setLocalStateField === "function") {
-                    a.setLocalStateField("user", null);
-                  } else if (typeof a.setLocalState === "function") {
-                    a.setLocalState(null);
-                  }
-                } catch (e) {
-                  /* ignore */
-                }
+            visibilityTimeout = setTimeout(() => {
+              try {
+                const p = providerRef.current as any;
+                const a = (awarenessRef.current ?? (p && p.awareness)) as any;
+                if (!a) return;
 
-                // schedule idle disconnect (graceful)
-                if (idleDisconnectTimer) clearTimeout(idleDisconnectTimer);
-                idleDisconnectTimer = setTimeout(() => {
+                if (document.visibilityState === "hidden") {
+                  // remove presence quickly
                   try {
-                    if (p && typeof p.disconnect === "function") p.disconnect();
-                    if (p && typeof p.destroy === "function") p.destroy();
-                    console.log("[IDLE] provider disconnected after idle");
+                    if (typeof a.setLocalStateField === "function") {
+                      a.setLocalStateField("user", null);
+                    } else if (typeof a.setLocalState === "function") {
+                      a.setLocalState(null);
+                    }
                   } catch (e) {
                     /* ignore */
                   }
-                }, IDLE_DISCONNECT_MS);
-              } else {
-                // page visible again: cancel scheduled disconnect and re-apply presence
-                if (idleDisconnectTimer) {
-                  clearTimeout(idleDisconnectTimer);
-                  idleDisconnectTimer = null;
-                }
 
-                const userPayload = {
-                  user: {
-                    id: user!.id,
-                    name: user!.name,
-                    email: user!.email,
-                    avatarUrl: user!.avatarUrl,
-                    color: user!.color,
-                  },
-                  ts: Date.now(),
-                };
-
-                try {
-                  if (typeof a.setLocalStateField === "function") {
-                    a.setLocalStateField("user", userPayload.user);
-                  } else if (typeof a.setLocalState === "function") {
-                    a.setLocalState(userPayload);
+                  // schedule idle disconnect (graceful) - increased timeout for better UX
+                  if (idleDisconnectTimer) clearTimeout(idleDisconnectTimer);
+                  idleDisconnectTimer = setTimeout(() => {
+                    try {
+                      if (p && typeof p.disconnect === "function")
+                        p.disconnect();
+                      // Don't destroy immediately, just disconnect
+                      if (process.env.NODE_ENV === "development") {
+                        console.log("[IDLE] provider disconnected after idle");
+                      }
+                    } catch (e) {
+                      /* ignore */
+                    }
+                  }, IDLE_DISCONNECT_MS);
+                } else {
+                  // page visible again: cancel scheduled disconnect and re-apply presence
+                  if (idleDisconnectTimer) {
+                    clearTimeout(idleDisconnectTimer);
+                    idleDisconnectTimer = null;
                   }
-                } catch (e) {
-                  /* ignore */
+
+                  // Only re-apply presence if we still have a valid user
+                  if (!user) return;
+
+                  const userPayload = {
+                    user: {
+                      id: user.id,
+                      name: user.name,
+                      email: user.email,
+                      avatarUrl: user.avatarUrl,
+                      color: user.color,
+                    },
+                    ts: Date.now(),
+                  };
+
+                  try {
+                    if (typeof a.setLocalStateField === "function") {
+                      a.setLocalStateField("user", userPayload.user);
+                    } else if (typeof a.setLocalState === "function") {
+                      a.setLocalState(userPayload);
+                    }
+                  } catch (e) {
+                    /* ignore */
+                  }
+                }
+              } catch (err) {
+                if (process.env.NODE_ENV === "development") {
+                  console.warn("[VISIBILITY] error", err);
                 }
               }
-            } catch (err) {
-              console.warn("[VISIBILITY] error", err);
-            }
+            }, 300); // 300ms debounce to prevent rapid state changes
           };
 
           // pagehide / beforeunload => final save, clear presence, disconnect/destroy provider
           const clearPresenceAndDisconnect = (ev?: any) => {
+            // Clear any pending visibility timeouts
+            if (visibilityTimeout) {
+              clearTimeout(visibilityTimeout);
+            }
+
             try {
-              // final save sync attempt
+              // final save sync attempt (but don't block)
               try {
                 saveOnUnloadSync();
               } catch (e) {
@@ -966,47 +1122,45 @@ export default function DocPage() {
               const p = providerRef.current as any;
               const a = (awarenessRef.current ?? (p && p.awareness)) as any;
 
-              if (a && typeof a.setLocalState === "function") {
+              // Clear awareness state
+              if (a) {
                 try {
-                  a.setLocalState(null);
-                  console.log("[UNLOAD] Cleared local awareness state via setLocalState(null)");
+                  if (typeof a.setLocalState === "function") {
+                    a.setLocalState(null);
+                  } else if (typeof a.setLocalStateField === "function") {
+                    a.setLocalStateField("user", null);
+                  }
                 } catch (e) {
-                  console.warn("[UNLOAD] setLocalState(null) failed", e);
-                }
-              } else if (a && typeof a.setLocalStateField === "function") {
-                try {
-                  a.setLocalStateField("user", null);
-                } catch (e) {
-                  // ignore
+                  // Silently ignore to prevent blocking page unload
                 }
               }
 
+              // Disconnect provider
               if (p) {
                 try {
                   if (typeof p.disconnect === "function") {
                     p.disconnect();
-                    console.log("[UNLOAD] provider.disconnect()");
                   }
-                } catch (e) {
-                  console.warn("[UNLOAD] provider.disconnect() failed", e);
-                }
-                try {
                   if (typeof p.destroy === "function") {
                     p.destroy();
-                    console.log("[UNLOAD] provider.destroy()");
                   }
                 } catch (e) {
-                  // ignore
+                  // Silently ignore to prevent blocking page unload
                 }
               }
             } catch (err) {
-              console.warn("[UNLOAD] Error clearing awareness on unload:", err);
+              // Silently ignore to prevent blocking page unload
             }
           };
 
-          // Attach handlers
-          window.addEventListener("pagehide", clearPresenceAndDisconnect, { capture: true });
-          window.addEventListener("beforeunload", clearPresenceAndDisconnect, { capture: true });
+          // Attach handlers (use passive listeners where possible for better performance)
+          window.addEventListener("pagehide", clearPresenceAndDisconnect, {
+            capture: true,
+            passive: true,
+          });
+          window.addEventListener("beforeunload", clearPresenceAndDisconnect, {
+            capture: true,
+          });
           document.addEventListener("visibilitychange", onVisibilityChange);
 
           // Save references so cleanup can remove them
@@ -1023,7 +1177,9 @@ export default function DocPage() {
 
           // Fallback: create standalone awareness (won't sync with others)
           try {
-            console.warn("[FALLBACK] Creating standalone awareness (no real-time sync)");
+            console.warn(
+              "[FALLBACK] Creating standalone awareness (no real-time sync)",
+            );
             const standaloneAwareness = new YAwareness(ydoc);
 
             if (
@@ -1053,7 +1209,9 @@ export default function DocPage() {
 
             awarenessRef.current = standaloneAwareness;
             setAwareness(standaloneAwareness);
-            console.warn("[FALLBACK] ⚠️ Using standalone awareness (changes won't sync to other users)");
+            console.warn(
+              "[FALLBACK] ⚠️ Using standalone awareness (changes won't sync to other users)",
+            );
 
             if (mounted) {
               setIsReady(true);
@@ -1061,7 +1219,10 @@ export default function DocPage() {
               setError("Collaboration unavailable - working in offline mode");
             }
           } catch (fallbackErr) {
-            console.error("[FALLBACK] ❌ Failed to create fallback awareness:", fallbackErr);
+            console.error(
+              "[FALLBACK] ❌ Failed to create fallback awareness:",
+              fallbackErr,
+            );
             setError("Failed to initialize editor. Please refresh the page.");
             setStatus("error");
           }
@@ -1073,18 +1234,73 @@ export default function DocPage() {
       }
     };
 
-    init();
+    init().then(() => {
+      isInitializedRef.current = true;
+    });
 
     return () => {
       mounted = false;
       cleanup();
     };
-    // Note: user and docId are intentionally dependencies
-  }, [docId, user]);
+    // Only depend on primitive IDs to prevent unnecessary re-initialization
+  }, [docId, user?.id]);
 
-  //
-  // -- SINGLE RETURN: build the JSX branches and render one final return --
-  //
+  // Observe Y.Doc meta.title for realtime rename propagation
+  useEffect(() => {
+    const theYdoc = ydoc ?? ydocRef.current;
+    if (!theYdoc) return;
+
+    try {
+      const meta = theYdoc.getMap("meta");
+
+      // Apply any existing meta.title immediately
+      const initialTitle = meta.get("title");
+      if (typeof initialTitle === "string") {
+        setDocumentTitle(initialTitle);
+        setTitleInput(initialTitle);
+        // if blank and routing indicates new, enter edit mode
+        if (!initialTitle && isNewRouting) {
+          setIsEditingTitle(true);
+        }
+      }
+
+      const handler = (evt: any) => {
+        const newTitle = meta.get("title");
+        if (typeof newTitle === "string") {
+          setDocumentTitle(newTitle);
+          setTitleInput(newTitle);
+          console.log("[YJS META] title changed ->", newTitle);
+
+          // Broadcast title change event so PageBlock components can update
+          try {
+            if (docId) {
+              const event = new CustomEvent("document-title-changed", {
+                detail: { docId, title: newTitle },
+              });
+              window.dispatchEvent(event);
+              console.log(
+                "[YJS META] Broadcasted title change event:",
+                newTitle,
+              );
+            }
+          } catch (e) {
+            console.warn("[YJS META] Failed to broadcast title change:", e);
+          }
+        }
+      };
+
+      meta.observe(handler);
+      return () => {
+        try {
+          meta.unobserve(handler);
+        } catch (e) {
+          /* ignore */
+        }
+      };
+    } catch (err) {
+      console.warn("[DocPage] failed to attach meta observer:", err);
+    }
+  }, [ydoc, isNewRouting]);
 
   // Loading session or initial user not available yet
   const renderLoadingSession = (
@@ -1147,12 +1363,13 @@ export default function DocPage() {
       {/* Document Header */}
       <div
         style={{
-          padding: "16px 24px",
+          padding: "12px 24px",
           borderBottom: "1px solid #e5e7eb",
-          background: "#ffffff",
+          background: "#fff",
           position: "sticky",
-          top: 60,
-          zIndex: 50,
+          top: 0,
+          zIndex: 1000,
+          minHeight: "60px", // Prevent layout shift during load
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -1313,10 +1530,11 @@ export default function DocPage() {
       {/* Main Content */}
       <div
         style={{
-          paddingLeft: 20,
-          paddingRight: 20,
-          paddingBottom: 20,
-          paddingTop: 20,
+          paddingLeft: 24,
+          paddingRight: 24,
+          paddingBottom: 60,
+          paddingTop: 24,
+          minHeight: "400px", // Prevent layout shift when editor loads
         }}
       >
         <PresenceBar awareness={awareness} />
@@ -1341,15 +1559,15 @@ export default function DocPage() {
               {status === "error"
                 ? "❌ Failed to load"
                 : status === "connecting"
-                ? "🔄 Connecting..."
-                : "⏳ Loading..."}
+                  ? "🔄 Connecting..."
+                  : "⏳ Loading..."}
             </div>
             <div style={{ fontSize: 14, color: "#9ca3af" }}>
               {status === "error"
                 ? error || "Please refresh the page"
                 : status === "connecting"
-                ? "Establishing connection to collaboration server..."
-                : "Initializing editor..."}
+                  ? "Establishing connection to collaboration server..."
+                  : "Initializing editor..."}
             </div>
           </div>
         ) : ydoc && provider && hasValidAwareness ? (
@@ -1492,14 +1710,17 @@ export default function DocPage() {
   //
   // Decide which branch to render and return it once
   //
-  if (sessionStatus === "loading" || !user) {
-    // when user is not yet initialized, show the session loading UI
+
+  // explicit session handling to avoid showing "loading" for unauthenticated users
+  if (sessionStatus === "loading") {
     return renderLoadingSession;
   }
-
   if (sessionStatus === "unauthenticated") {
-    // Not signed in
     return renderUnauthenticated;
+  }
+  // still no user object (should be rare) — show loading
+  if (!user) {
+    return renderLoadingSession;
   }
 
   if (!docId) {
@@ -1507,5 +1728,9 @@ export default function DocPage() {
   }
 
   // Default: render the main editor UI
-  return <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>{mainEditorUI}</div>;
+  return (
+    <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
+      {mainEditorUI}
+    </div>
+  );
 }

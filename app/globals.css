@@ -8,6 +8,20 @@
     --editor-caret: #111111;
 }
 
+/* Performance Optimizations */
+* {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Reduce paint areas */
+@layer utilities {
+    .gpu-accelerated {
+        transform: translateZ(0);
+        will-change: transform;
+    }
+}
+
 @theme inline {
     --color-background: var(--background);
     --color-foreground: var(--foreground);
@@ -34,6 +48,135 @@ body {
         "Helvetica Neue",
         Arial,
         sans-serif;
+    /* Performance optimizations */
+    text-rendering: optimizeLegibility;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Loading animations */
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Accessibility improvements */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
+/* Skip to main content link */
+.skip-to-content {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: #4f46e5;
+    color: white;
+    padding: 8px 16px;
+    text-decoration: none;
+    border-radius: 0 0 4px 0;
+    z-index: 100;
+}
+
+.skip-to-content:focus {
+    top: 0;
+}
+
+/* Focus visible improvements */
+:focus-visible {
+    outline: 2px solid #4f46e5;
+    outline-offset: 2px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+    outline: 2px solid #4f46e5;
+    outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    :root {
+        --background: #ffffff;
+        --foreground: #000000;
+    }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Loading skeleton utilities */
+.skeleton {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+}
+
+/* Smooth scrolling for supported browsers */
+@media (prefers-reduced-motion: no-preference) {
+    html {
+        scroll-behavior: smooth;
+    }
+}
+
+/* Improve text contrast for accessibility */
+::selection {
+    background-color: rgba(79, 70, 229, 0.25);
+    color: inherit;
 }
 
 /**
@@ -397,8 +540,10 @@ body {
 
 /* Icon container */
 .slash-menu-item-icon {
-    color: var(--editor-text) !important;    /* force icon glyphs to use editor text color */
-    font-weight: 600;                         /* make the H1/H2 label bolder */
+    color: var(
+        --editor-text
+    ) !important; /* force icon glyphs to use editor text color */
+    font-weight: 600; /* make the H1/H2 label bolder */
     line-height: 1;
     width: 40px;
     height: 40px;
@@ -497,4 +642,156 @@ body {
 .tiptap-content ul[data-type="taskList"] li[data-checked="true"] > div {
     text-decoration: line-through;
     color: #9ca3af !important;
+}
+
+/* Performance optimizations for large documents */
+.tiptap-content {
+    contain: layout style paint;
+    content-visibility: auto;
+}
+
+/* Optimize rendering for better paint performance */
+.tiptap-content p,
+.tiptap-content h1,
+.tiptap-content h2,
+.tiptap-content h3,
+.tiptap-content h4,
+.tiptap-content h5,
+.tiptap-content h6 {
+    contain-intrinsic-size: auto 500px;
+}
+
+/* Lazy loading optimization */
+img {
+    content-visibility: auto;
+}
+
+/* Reduce layout shifts */
+img[width][height] {
+    height: auto;
+}
+
+/* Better contrast for better accessibility (WCAG AA) */
+.tiptap-content a {
+    color: #1d4ed8 !important;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
+}
+
+.tiptap-content a:hover {
+    color: #1e40af !important;
+}
+
+.tiptap-content a:focus-visible {
+    outline: 2px solid #4f46e5;
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+/* Improve button accessibility */
+button,
+[role="button"] {
+    cursor: pointer;
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Better color contrast for code */
+.tiptap-content code {
+    background: #fee2e2;
+    color: #991b1b !important;
+}
+
+.tiptap-content pre code {
+    background: transparent;
+    color: #1f2937 !important;
+}
+
+/* Table accessibility improvements */
+.tiptap-content table {
+    border: 2px solid #d1d5db;
+}
+
+.tiptap-content th {
+    font-weight: 700;
+    background: #f3f4f6;
+}
+
+/* Ensure sufficient contrast for blockquotes */
+.tiptap-content blockquote {
+    color: #374151 !important;
+    border-left-color: #9ca3af;
+    border-left-width: 4px;
+}
+
+/* Print styles */
+@media print {
+    body {
+        background: white;
+        color: black;
+    }
+
+    .tiptap-content {
+        background: white;
+    }
+
+    a[href]:after {
+        content: " (" attr(href) ")";
+    }
+}
+
+/* Optimize animations for better performance */
+@media (prefers-reduced-motion: no-preference) {
+    .animate-fade-in {
+        animation: fadeIn 0.3s ease-in-out;
+    }
+
+    .animate-slide-up {
+        animation: slideUp 0.3s ease-out;
+    }
+}
+.page-block-wrapper {
+    margin: 8px 0;
+}
+
+.page-block-link {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    padding: 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.page-block-link:hover {
+    border-color: #2563eb;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.page-block-link.page-block-selected {
+    border: 2px solid #2563eb;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.page-block-link .page-block-title {
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.page-block-link .page-block-meta {
+    font-size: 12px;
+    color: #6b7280;
+    padding-left: 24px;
 }

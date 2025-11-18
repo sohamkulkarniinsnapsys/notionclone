@@ -19,22 +19,34 @@ export async function POST(
 
     // Validate input
     if (!email || typeof email !== "string") {
-      return NextResponse.json({ error: "Email is required and must be a string" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Email is required and must be a string" },
+        { status: 400 },
+      );
     }
 
     if (!role || !["VIEWER", "EDITOR", "ADMIN"].includes(role)) {
-      return NextResponse.json({ error: "Invalid role. Must be VIEWER, EDITOR, or ADMIN" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid role. Must be VIEWER, EDITOR, or ADMIN" },
+        { status: 400 },
+      );
     }
 
     const trimmedEmail = email.trim().toLowerCase();
     if (trimmedEmail.length === 0) {
-      return NextResponse.json({ error: "Email cannot be empty" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Email cannot be empty" },
+        { status: 400 },
+      );
     }
 
     // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmedEmail)) {
-      return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid email format" },
+        { status: 400 },
+      );
     }
 
     // Authenticate and check permissions
@@ -52,7 +64,10 @@ export async function POST(
     });
 
     if (!document) {
-      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Document not found" },
+        { status: 404 },
+      );
     }
 
     // Require at least EDITOR role to invite others
@@ -72,7 +87,10 @@ export async function POST(
     });
 
     if (existingInvite) {
-      return NextResponse.json({ error: "An invitation is already pending for this email" }, { status: 409 });
+      return NextResponse.json(
+        { error: "An invitation is already pending for this email" },
+        { status: 409 },
+      );
     }
 
     // Generate unique token
@@ -114,16 +132,27 @@ export async function POST(
       },
     });
 
-    const perUserRefreshToken = (googleAccount as any)?.refresh_token ?? undefined;
+    const perUserRefreshToken =
+      (googleAccount as { refresh_token?: string | null })?.refresh_token ??
+      undefined;
 
     // Also allow fallback env var: GMAIL_REFRESH_TOKEN or REFRESH_TOKEN
-    const systemRefreshToken = process.env.GMAIL_REFRESH_TOKEN || process.env.REFRESH_TOKEN || undefined;
+    const systemRefreshToken =
+      process.env.GMAIL_REFRESH_TOKEN || process.env.REFRESH_TOKEN || undefined;
 
-    const usedSource = perUserRefreshToken ? "per-user" : (systemRefreshToken ? "system" : "none");
+    const usedSource = perUserRefreshToken
+      ? "per-user"
+      : systemRefreshToken
+        ? "system"
+        : "none";
     if (usedSource === "none") {
-      console.warn("[Invite] No refresh token available — invites will be created but email won't be sent.");
+      console.warn(
+        "[Invite] No refresh token available — invites will be created but email won't be sent.",
+      );
     } else {
-      console.log(`[Invite] Attempting to send email using ${usedSource} refresh token.`);
+      console.log(
+        `[Invite] Attempting to send email using ${usedSource} refresh token.`,
+      );
     }
 
     // Build email content
@@ -154,7 +183,9 @@ export async function POST(
     // Attempt to send email; do not fail creation if email fails
     try {
       if (!perUserRefreshToken && !systemRefreshToken) {
-        console.warn("[Invite] Skipping email send; no refresh token available.");
+        console.warn(
+          "[Invite] Skipping email send; no refresh token available.",
+        );
       } else {
         const emailSent = await sendEmail(
           {
@@ -167,17 +198,22 @@ export async function POST(
             refreshToken: perUserRefreshToken,
             userEmail: inviter?.email || process.env.GMAIL_USER,
             allowSystemFallback: true,
-          }
+          },
         );
 
         if (emailSent) {
           console.log(`[Invite] Email sent successfully to ${trimmedEmail}`);
         } else {
-          console.warn(`[Invite] Failed to send email to ${trimmedEmail}, but invite was created`);
+          console.warn(
+            `[Invite] Failed to send email to ${trimmedEmail}, but invite was created`,
+          );
         }
       }
     } catch (emailError: unknown) {
-      console.error("[Invite] Error sending email:", emailError instanceof Error ? emailError.message : String(emailError));
+      console.error(
+        "[Invite] Error sending email:",
+        emailError instanceof Error ? emailError.message : String(emailError),
+      );
       // Don't fail the request if email fails - invite is still created
     }
 
@@ -192,14 +228,15 @@ export async function POST(
       },
       message: "Invitation created successfully",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Document invite error:", error);
 
-    if (error.message?.includes("Unauthorized")) {
+    const err = error as { message?: string };
+    if (err.message?.includes("Unauthorized")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (error.message?.includes("Forbidden")) {
+    if (err.message?.includes("Forbidden")) {
       return NextResponse.json(
         {
           error: "Forbidden: Insufficient permissions to invite collaborators",
@@ -208,6 +245,9 @@ export async function POST(
       );
     }
 
-    return NextResponse.json({ error: "Failed to send invitation" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to send invitation" },
+      { status: 500 },
+    );
   }
 }

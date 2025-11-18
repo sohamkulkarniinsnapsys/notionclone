@@ -9,6 +9,7 @@ import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import Placeholder from "@tiptap/extension-placeholder";
 import axios from "axios";
+import { PageBlock } from "@/components/extensions/PageBlock";
 
 type Props = {
   documentId: string;
@@ -95,6 +96,7 @@ export default function CollaborativeEditor({ documentId, user }: Props) {
   const editor = useEditor({
     extensions: [
       StarterKit,
+      PageBlock,
       Placeholder.configure({
         placeholder: "Start typing...",
       }),

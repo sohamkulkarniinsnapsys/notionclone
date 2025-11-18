@@ -65,6 +65,71 @@ export function getSlashCommands(): CommandItem[] {
       },
       aliases: ["h3", "subheading"],
     },
+    // Page
+    {
+      title: "Page",
+      description: "Create a new page as a block",
+      icon: "📄",
+      category: "structure",
+      aliases: ["page", "link page", "subpage"],
+      command: async (editor) => {
+        try {
+          const guessWorkspace = (() => {
+            try {
+              const m = window.location.pathname.match(/\/workspace\/([^/]+)/);
+              return m ? m[1] : null;
+            } catch {
+              return null;
+            }
+          })();
+
+          const workspaceId = guessWorkspace || "personal";
+
+          const res = await fetch("/api/documents", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              workspaceId,
+              title: "Untitled",
+            }),
+          });
+
+          if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            console.error(
+              "Failed to create document for page block:",
+              res.status,
+              text,
+            );
+            alert("Failed to create page. See console for details.");
+            return;
+          }
+
+          const data = await res.json();
+          const doc = data.document;
+          if (!doc || !doc.id) {
+            console.error("API returned unexpected document:", data);
+            alert("Failed to create page (invalid response).");
+            return;
+          }
+
+          // Insert PageBlock node with the document details
+          editor
+            .chain()
+            .focus()
+            .insertPageBlock({
+              docId: doc.id,
+              title: doc.title || "Untitled",
+              workspaceId: workspaceId,
+            })
+            .run();
+        } catch (err) {
+          console.error("Error creating page in slash command:", err);
+          alert("Error creating page. See console for details.");
+        }
+      },
+    },
+
     // Lists
     {
       title: "Bullet List",
@@ -139,7 +204,10 @@ export function getSlashCommands(): CommandItem[] {
 /**
  * Filter commands based on search query
  */
-export function filterCommands(commands: CommandItem[], query: string): CommandItem[] {
+export function filterCommands(
+  commands: CommandItem[],
+  query: string,
+): CommandItem[] {
   if (!query) return commands;
 
   const normalizedQuery = query.toLowerCase().trim();
@@ -158,7 +226,7 @@ export function filterCommands(commands: CommandItem[], query: string): CommandI
     // Match aliases
     if (
       item.aliases?.some((alias) =>
-        alias.toLowerCase().includes(normalizedQuery)
+        alias.toLowerCase().includes(normalizedQuery),
       )
     ) {
       return true;

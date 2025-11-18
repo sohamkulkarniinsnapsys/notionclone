@@ -7,6 +7,8 @@ import { getSession } from "@/lib/auth";
  * GET /api/documents?workspaceId=xxx
  * List all documents in a workspace that the user has access to
  */
+
+
 export async function GET(req: Request) {
   try {
     const session = await getSession();
@@ -16,6 +18,7 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const workspaceId = searchParams.get("workspaceId");
+
 
     if (!workspaceId) {
       return NextResponse.json(

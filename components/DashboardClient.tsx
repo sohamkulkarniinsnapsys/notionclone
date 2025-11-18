@@ -33,6 +33,7 @@ export default function DashboardClient({
       });
 
       if (response.ok) {
+        setIsDeleting(false);
         setDeleteModal(null);
         router.refresh();
       } else {
@@ -59,6 +60,7 @@ export default function DashboardClient({
       });
 
       if (response.ok) {
+        setIsDeleting(false);
         setDeleteModal(null);
         router.refresh();
       } else {
@@ -224,7 +226,6 @@ export default function DashboardClient({
               padding: 24,
               maxWidth: 400,
               width: "90%",
-              
             }}
             onClick={(e) => e.stopPropagation()}
           >

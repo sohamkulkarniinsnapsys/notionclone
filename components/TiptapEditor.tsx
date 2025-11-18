@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "@tiptap/extension-link";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Collaboration from "@tiptap/extension-collaboration";
@@ -19,10 +21,11 @@ import {
   SlashCommand,
   createSlashCommandSuggestion,
 } from "./editor/slash-command";
+import { PageBlock } from "./extensions/PageBlock";
 
 interface TiptapEditorProps {
   ydoc: Y.Doc;
-  provider: WebsocketProvider;
+  provider: WebsocketProvider | null;
   awareness: Awareness | null;
   user: {
     id: string;
@@ -50,6 +53,7 @@ export default function TiptapEditor({
   docId,
   collab = true,
 }: TiptapEditorProps) {
+  const router = useRouter();
   const [isReady, setIsReady] = useState(false);
   const [isSyncing, setIsSyncing] = useState(true);
 
@@ -73,6 +77,8 @@ export default function TiptapEditor({
         history: false, // Disable history when using collaboration
       }),
 
+      PageBlock,
+
       // Slash suggestion early
       SlashCommand.configure({
         suggestion: createSlashCommandSuggestion(),
@@ -93,6 +99,19 @@ export default function TiptapEditor({
       TableRow,
       TableHeader,
       TableCell,
+
+      // lists
+      BulletList,
+      OrderedList,
+
+      // Link extension — ensures link marks render as <a> and we control click behavior
+      Link.configure({
+        openOnClick: false, // we intercept clicks to use next/router
+        HTMLAttributes: {
+          rel: "noopener noreferrer",
+          // You can add className here if you want to style links
+        },
+      }),
 
       // Collaboration
       ...(shouldUseCollab
@@ -120,6 +139,52 @@ export default function TiptapEditor({
         class: "tiptap-content focus:outline-none max-w-none",
         style: "min-height: 400px; padding: 20px; outline: none;",
       },
+
+      /**
+       * Intercept clicks inside the editor and handle anchor navigation:
+       * - internal links (href starting with "/") -> router.push (SPA navigation)
+       * - external links -> let browser handle (open in same tab or respect target attribute)
+       *
+       * Tiptap's handleClickOn signature: (view, pos, node, nodePos, event) => boolean
+       * Return true when we handled the click (prevent default).
+       */
+      handleClickOn(view: any, _pos: number, _node: any, _nodePos: number, event: MouseEvent) {
+        try {
+          const target = event?.target as HTMLElement | null;
+          if (!target) return false;
+
+          // Find nearest anchor (support clicks on nested elements)
+          const anchor = target.closest && (target.closest("a") as HTMLAnchorElement | null);
+          if (anchor && anchor instanceof HTMLAnchorElement) {
+            const href = anchor.getAttribute("href") ?? "";
+
+            // If internal link (starts with "/"), use Next router for SPA navigation
+            if (href.startsWith("/")) {
+              // Avoid default navigation / reload
+              // If user held ctrl/meta or middle-click: open in new tab
+              const mouseEvent = event as MouseEvent & { metaKey?: boolean; ctrlKey?: boolean; button?: number };
+              const openInNewTab = mouseEvent.metaKey || mouseEvent.ctrlKey || mouseEvent.button === 1;
+              if (openInNewTab) {
+                window.open(href, "_blank");
+              } else {
+                // Use router.push for client-side navigation
+                router.push(href);
+              }
+              event.preventDefault();
+              return true; // handled
+            }
+
+            // For external links (http(s)...) allow default browser behavior.
+            return false;
+          }
+        } catch (err) {
+          // Fall back to default behavior on errors
+          if (process.env.NODE_ENV === "development") {
+            console.warn("handleClickOn error:", err);
+          }
+        }
+        return false;
+      },
     },
     immediatelyRender: false,
   });
@@ -135,12 +200,16 @@ export default function TiptapEditor({
       if (!mounted) return;
       setIsSyncing(!synced);
       if (synced) setIsReady(true);
-      console.log("[Editor] Sync event:", synced);
+      if (process.env.NODE_ENV === "development") {
+        console.log("[Editor] Sync event:", synced);
+      }
     };
 
     const handleStatus = ({ status }: { status: string }) => {
       if (!mounted) return;
-      console.log("[Editor] Provider status:", status);
+      if (process.env.NODE_ENV === "development") {
+        console.log("[Editor] Provider status:", status);
+      }
       if (status === "connected") {
         setIsReady(true);
         setIsSyncing(false);
@@ -149,7 +218,7 @@ export default function TiptapEditor({
       }
     };
 
-    // initial state
+    // initial state: check provider.synced if available
     try {
       if ((provider as any).synced) {
         setIsReady(true);
@@ -163,16 +232,18 @@ export default function TiptapEditor({
       provider.on("sync", handleSync);
       provider.on("status", handleStatus);
     } catch (e) {
-      console.warn("[Editor] provider event attach failed", e);
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[Editor] provider event attach failed", e);
+      }
     }
 
-    // fallback: if sync never fired, set editor ready after 2s so UI isn't blocked
+    // fallback: if sync never fired, set editor ready after 3s so UI isn't blocked
     const fallbackTimer = setTimeout(() => {
-      if (!isReady) {
+      if (mounted && !isReady) {
         setIsReady(true);
         setIsSyncing(false);
       }
-    }, 2000);
+    }, 3000);
 
     return () => {
       mounted = false;
@@ -184,15 +255,20 @@ export default function TiptapEditor({
       }
       clearTimeout(fallbackTimer);
     };
+    // provider is the only dependency intentionally
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
 
   //
-  // Presence: set local state in a cross-version-safe way
+  // Presence: set local state once (optimized to prevent excessive updates)
   //
   useEffect(() => {
     const a = resolvedAwareness;
     if (!a || !user || !editor) return;
+
+    let isActive = true;
+    let updateThrottle: ReturnType<typeof setTimeout> | null = null;
+    const THROTTLE_MS = 5000; // Only update presence every 5 seconds max
 
     const payload = {
       user: {
@@ -205,30 +281,36 @@ export default function TiptapEditor({
       ts: Date.now(),
     };
 
-    // prefer setLocalStateField when available (common with y-websocket)
+    // Set initial presence state once
     try {
       if (typeof (a as any).setLocalStateField === "function") {
         (a as any).setLocalStateField("user", payload.user);
       } else if (typeof a.setLocalState === "function") {
         a.setLocalState(payload);
-      } else {
-        console.warn("[TiptapEditor] Awareness has no setLocalState* API");
       }
     } catch (err) {
-      console.warn("[TiptapEditor] Error setting local presence:", err);
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[TiptapEditor] Error setting presence:", err);
+      }
     }
 
-    // Re-apply on updates (some servers re-create the awareness object)
+    // Throttled re-apply on updates to prevent excessive network traffic
     const onUpdate = () => {
-      try {
-        if (typeof (a as any).setLocalStateField === "function") {
-          (a as any).setLocalStateField("user", payload.user);
-        } else if (typeof a.setLocalState === "function") {
-          a.setLocalState(payload);
+      if (!isActive) return;
+      if (updateThrottle) return;
+      updateThrottle = setTimeout(() => {
+        if (!isActive) return;
+        try {
+          if (typeof (a as any).setLocalStateField === "function") {
+            (a as any).setLocalStateField("user", payload.user);
+          } else if (typeof a.setLocalState === "function") {
+            a.setLocalState(payload);
+          }
+        } catch (e) {
+          // Silently ignore
         }
-      } catch (e) {
-        /* ignore */
-      }
+        updateThrottle = null;
+      }, THROTTLE_MS);
     };
 
     if (typeof (a as any).on === "function") {
@@ -239,8 +321,12 @@ export default function TiptapEditor({
       }
     }
 
-    // Clear presence quickly on pagehide to avoid duplicates on refresh
+    // Clear presence on page unload
     const clearPresence = () => {
+      isActive = false;
+      if (updateThrottle) {
+        clearTimeout(updateThrottle);
+      }
       try {
         if (typeof (a as any).setLocalStateField === "function") {
           (a as any).setLocalStateField("user", null);
@@ -252,23 +338,26 @@ export default function TiptapEditor({
       }
     };
 
-    window.addEventListener("pagehide", clearPresence, { capture: true });
-    window.addEventListener("beforeunload", clearPresence, { capture: true });
+    window.addEventListener("pagehide", clearPresence);
+    window.addEventListener("beforeunload", clearPresence);
 
     return () => {
-      try {
-        if (typeof (a as any).off === "function") {
-          (a as any).off("update", onUpdate);
-        }
-      } catch (e) {
-        /* ignore */
+      isActive = false;
+      if (updateThrottle) {
+        clearTimeout(updateThrottle);
       }
-      window.removeEventListener("pagehide", clearPresence, { capture: true });
-      window.removeEventListener("beforeunload", clearPresence, { capture: true });
-      // best-effort clear on unmount
-      clearPresence();
+      window.removeEventListener("pagehide", clearPresence);
+      window.removeEventListener("beforeunload", clearPresence);
+      if (typeof (a as any).off === "function") {
+        try {
+          (a as any).off("update", onUpdate);
+        } catch (e) {
+          // ignore
+        }
+      }
     };
-  }, [resolvedAwareness, editor, user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedAwareness, user?.id, editor]); // only re-run if user ID changes
 
   //
   // Render / fallbacks
@@ -277,14 +366,63 @@ export default function TiptapEditor({
     return (
       <div
         style={{
-          padding: 40,
-          textAlign: "center",
-          color: "#9ca3af",
           border: "1px solid #e5e7eb",
           borderRadius: 8,
+          minHeight: 400,
+          background: "#fff",
+          padding: 20,
+          position: "relative",
         }}
       >
-        Loading editor...
+        {/* Skeleton loader with fixed dimensions to prevent layout shift */}
+        <div
+          style={{
+            animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+          }}
+        >
+          <div
+            style={{
+              height: 32,
+              width: "40%",
+              background: "#e5e7eb",
+              borderRadius: 4,
+              marginBottom: 16,
+            }}
+          />
+          <div
+            style={{
+              height: 20,
+              width: "90%",
+              background: "#f3f4f6",
+              borderRadius: 4,
+              marginBottom: 12,
+            }}
+          />
+          <div
+            style={{
+              height: 20,
+              width: "75%",
+              background: "#f3f4f6",
+              borderRadius: 4,
+              marginBottom: 12,
+            }}
+          />
+          <div
+            style={{
+              height: 20,
+              width: "85%",
+              background: "#f3f4f6",
+              borderRadius: 4,
+              marginBottom: 12,
+            }}
+          />
+        </div>
+        <style>{`
+          @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+          }
+        `}</style>
       </div>
     );
   }
@@ -315,7 +453,8 @@ export default function TiptapEditor({
           border: "1px solid #e5e7eb",
           borderRadius: 8,
           minHeight: 400,
-          background: "white",
+          background: "#fff",
+          willChange: "contents",
         }}
       >
         <EditorContent editor={editor} />

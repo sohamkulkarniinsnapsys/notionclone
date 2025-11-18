@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Awareness } from "y-protocols/awareness";
 
 /**
@@ -27,7 +27,11 @@ type UserPresence = {
   ts?: number | null;
 };
 
-export default function PresenceBar({ awareness }: { awareness: Awareness | null }) {
+export default function PresenceBar({
+  awareness,
+}: {
+  awareness: Awareness | null;
+}) {
   const [peers, setPeers] = useState<UserPresence[]>([]);
 
   useEffect(() => {
@@ -35,6 +39,9 @@ export default function PresenceBar({ awareness }: { awareness: Awareness | null
       setPeers([]);
       return;
     }
+
+    let updateThrottle: NodeJS.Timeout | null = null;
+    const THROTTLE_MS = 1000; // Only update presence every 1 second to reduce re-renders
 
     const readStates = (): UserPresence[] => {
       try {
@@ -49,7 +56,12 @@ export default function PresenceBar({ awareness }: { awareness: Awareness | null
             let userData = null;
             if (state.user) {
               userData = state.user;
-            } else if (state.name || state.id || state.avatarUrl || state.color) {
+            } else if (
+              state.name ||
+              state.id ||
+              state.avatarUrl ||
+              state.color
+            ) {
               // top-level user fields
               userData = {
                 id: state.id,
@@ -96,10 +108,19 @@ export default function PresenceBar({ awareness }: { awareness: Awareness | null
       }
     };
 
-    // subscribe to awareness updates
+    // subscribe to awareness updates with throttling
     const onAwarenessUpdate = () => {
-      const list = readStates();
-      setPeers(list);
+      // Clear existing throttle
+      if (updateThrottle) {
+        clearTimeout(updateThrottle);
+      }
+
+      // Throttle updates to prevent excessive re-renders
+      updateThrottle = setTimeout(() => {
+        const list = readStates();
+        setPeers(list);
+        updateThrottle = null;
+      }, THROTTLE_MS);
     };
 
     try {
@@ -121,6 +142,11 @@ export default function PresenceBar({ awareness }: { awareness: Awareness | null
     }
 
     return () => {
+      // Clear throttle on cleanup
+      if (updateThrottle) {
+        clearTimeout(updateThrottle);
+      }
+
       try {
         if (typeof (awareness as any).off === "function") {
           (awareness as any).off("update", onAwarenessUpdate);
@@ -134,10 +160,28 @@ export default function PresenceBar({ awareness }: { awareness: Awareness | null
 
   const onlineCount = peers.length;
 
+  // Memoize the peers list to prevent unnecessary re-renders
+  const displayPeers = useMemo(() => peers.slice(0, 5), [peers]);
+
+  // Memoize the text to prevent re-computation
+  const statusText = useMemo(() => {
+    if (onlineCount === 0) return "No collaborators online";
+    return `${onlineCount} collaborator${onlineCount > 1 ? "s" : ""} online`;
+  }, [onlineCount]);
+
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        marginBottom: 12,
+        minHeight: 40, // Fixed height to prevent layout shift
+        transition: "opacity 0.2s ease-in-out",
+      }}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: -8 }}>
-        {peers.slice(0, 5).map((p) => (
+        {displayPeers.map((p) => (
           <div
             key={p.clientId}
             title={p.name || String(p.clientId)}
@@ -168,8 +212,8 @@ export default function PresenceBar({ awareness }: { awareness: Awareness | null
           </div>
         ))}
       </div>
-      <div style={{ color: "#6b7280", fontSize: 13 }}>
-        {onlineCount === 0 ? "No collaborators online" : `${onlineCount} collaborator${onlineCount > 1 ? "s" : ""} online`}
+      <div style={{ color: "#6b7280", fontSize: 13, fontWeight: 500 }}>
+        {statusText}
       </div>
     </div>
   );
