@@ -63,7 +63,8 @@ export default function TiptapEditor({
 
   // Build a provider-like object for CollaborationCursor.
   const collaborationCursorProvider =
-    provider ?? (resolvedAwareness ? { awareness: resolvedAwareness } : undefined);
+    provider ??
+    (resolvedAwareness ? { awareness: resolvedAwareness } : undefined);
 
   const shouldUseCollab = collab && (provider || resolvedAwareness);
 
@@ -148,13 +149,20 @@ export default function TiptapEditor({
        * Tiptap's handleClickOn signature: (view, pos, node, nodePos, event) => boolean
        * Return true when we handled the click (prevent default).
        */
-      handleClickOn(view: any, _pos: number, _node: any, _nodePos: number, event: MouseEvent) {
+      handleClickOn(
+        view: any,
+        _pos: number,
+        _node: any,
+        _nodePos: number,
+        event: MouseEvent,
+      ) {
         try {
           const target = event?.target as HTMLElement | null;
           if (!target) return false;
 
           // Find nearest anchor (support clicks on nested elements)
-          const anchor = target.closest && (target.closest("a") as HTMLAnchorElement | null);
+          const anchor =
+            target.closest && (target.closest("a") as HTMLAnchorElement | null);
           if (anchor && anchor instanceof HTMLAnchorElement) {
             const href = anchor.getAttribute("href") ?? "";
 
@@ -162,8 +170,15 @@ export default function TiptapEditor({
             if (href.startsWith("/")) {
               // Avoid default navigation / reload
               // If user held ctrl/meta or middle-click: open in new tab
-              const mouseEvent = event as MouseEvent & { metaKey?: boolean; ctrlKey?: boolean; button?: number };
-              const openInNewTab = mouseEvent.metaKey || mouseEvent.ctrlKey || mouseEvent.button === 1;
+              const mouseEvent = event as MouseEvent & {
+                metaKey?: boolean;
+                ctrlKey?: boolean;
+                button?: number;
+              };
+              const openInNewTab =
+                mouseEvent.metaKey ||
+                mouseEvent.ctrlKey ||
+                mouseEvent.button === 1;
               if (openInNewTab) {
                 window.open(href, "_blank");
               } else {
@@ -366,10 +381,10 @@ export default function TiptapEditor({
     return (
       <div
         style={{
-          border: "1px solid #e5e7eb",
+          border: "1px solid var(--color-border)",
           borderRadius: 8,
           minHeight: 400,
-          background: "#fff",
+          background: "var(--color-bg-primary)",
           padding: 20,
           position: "relative",
         }}
@@ -450,10 +465,10 @@ export default function TiptapEditor({
 
       <div
         style={{
-          border: "1px solid #e5e7eb",
+          border: "1px solid var(--color-border)",
           borderRadius: 8,
           minHeight: 400,
-          background: "#fff",
+          background: "var(--color-bg-primary)",
           willChange: "contents",
         }}
       >
@@ -464,13 +479,13 @@ export default function TiptapEditor({
         .tiptap-content,
         .tiptap-content .ProseMirror,
         .ProseMirror {
-          color: #111827 !important;
-          background: #ffffff !important;
-          caret-color: #111827 !important;
+          color: var(--color-text-primary) !important;
+          background: var(--color-bg-primary) !important;
+          caret-color: var(--color-text-primary) !important;
         }
 
         .slash-menu {
-          background: white;
+          background: var(--color-bg-primary);
           border: 1px solid #e5e7eb;
           border-radius: 8px;
           box-shadow:

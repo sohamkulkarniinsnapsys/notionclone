@@ -101,11 +101,10 @@ export default function TiptapEditor({
     content: "<p></p>",
     editorProps: {
       attributes: {
-        class:
-          "tiptap-content focus:outline-none bg-white text-black caret-black min-h-[320px] p-3",
+        class: "tiptap-content focus:outline-none min-h-[320px] p-3",
         spellCheck: "true",
         style:
-          "background:#ffffff;color:#000000;caret-color:#000000;min-height:320px;padding:12px;",
+          "background:var(--color-bg-primary);color:var(--color-text-primary);caret-color:var(--color-text-primary);min-height:320px;padding:12px;",
       },
     },
   });
@@ -185,27 +184,16 @@ export default function TiptapEditor({
 
   return (
     <div>
-      <button
-        onClick={manualSave}
-        style={{
-          padding: "6px 12px",
-          background: "#3b82f6",
-          color: "white",
-          border: "none",
-          borderRadius: 4,
-          cursor: "pointer",
-          marginBottom: 8,
-        }}
-      >
+      <button onClick={manualSave} className="btn btn-primary mb-2">
         💾 Save Snapshot
       </button>
 
       <div
         style={{
-          border: "1px solid #e5e7eb",
+          border: "1px solid var(--color-border)",
           borderRadius: 8,
           minHeight: 400,
-          background: "#fff",
+          background: "var(--color-bg-primary)",
         }}
       >
         <EditorContent editor={editor} />
@@ -214,9 +202,9 @@ export default function TiptapEditor({
       <style jsx global>{`
         .tiptap-content,
         .ProseMirror {
-          background: #ffffff !important;
-          color: #111827 !important;
-          caret-color: #111827 !important;
+          background: var(--color-bg-primary) !important;
+          color: var(--color-text-primary) !important;
+          caret-color: var(--color-text-primary) !important;
         }
       `}</style>
     </div>

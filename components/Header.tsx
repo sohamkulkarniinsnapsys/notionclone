@@ -3,10 +3,12 @@
 import React, { useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function Header() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
@@ -23,16 +25,12 @@ export default function Header() {
 
   if (status === "loading") {
     return (
-      <header className="header-container">
-        <div className="header-content">
-          <div className="header-logo">
-            <span className="logo-icon">📝</span>
-            <span className="logo-text">Notion Clone</span>
-          </div>
-          <div className="header-actions">
-            <div className="skeleton-avatar"></div>
-          </div>
+      <header className="h-16 border-b border-[var(--color-border)] bg-[var(--color-bg-primary)] px-6 flex items-center justify-between document-header animate-fadeIn">
+        <div className="flex items-center gap-3">
+          <div className="w-6 h-6 skeleton" />
+          <div className="w-32 h-5 skeleton" />
         </div>
+        <div className="w-10 h-10 rounded skeleton" />
       </header>
     );
   }
@@ -43,86 +41,172 @@ export default function Header() {
 
   return (
     <>
-      <header className="header-container">
-        <div className="header-content">
-          <div className="header-logo" onClick={() => router.push("/dashboard")}>
-            <span className="logo-icon">📝</span>
-            <span className="logo-text">Notion Clone</span>
-          </div>
+      <header className="h-16 border-b border-[var(--color-border)] bg-[var(--color-bg-primary)] px-6 flex items-center justify-between sticky top-0 z-[var(--z-sticky)] document-header animate-slideDown">
+        {/* Left - Logo */}
+        <Link
+          href="/dashboard"
+          className="flex items-center gap-3 px-3 py-2 rounded hover:bg-[var(--color-bg-hover)] transition-all hover:scale-105"
+        >
+          <span className="text-2xl">📝</span>
+          <span className="text-base font-semibold text-[var(--color-text-primary)]">
+            Notion Clone
+          </span>
+        </Link>
 
-          <div className="header-actions">
-            <div className="user-info">
-              {session.user.image ? (
-                <img
-                  src={session.user.image}
-                  alt={session.user.name || "User"}
-                  className="user-avatar"
-                />
-              ) : (
-                <div className="user-avatar-fallback">
-                  {session.user.name?.charAt(0).toUpperCase() || "U"}
-                </div>
-              )}
-              <span className="user-name">{session.user.name || session.user.email}</span>
-            </div>
-
-            <button
-              onClick={() => setShowConfirmModal(true)}
-              className="logout-button"
-              aria-label="Sign out"
-              type="button"
+        {/* Right - User Menu */}
+        <div className="relative">
+          <button
+            onClick={() => setShowUserMenu(!showUserMenu)}
+            className="flex items-center gap-3 px-3 py-2 rounded hover:bg-[var(--color-bg-hover)] transition-all hover:scale-105"
+            aria-label="User menu"
+          >
+            {session.user.image ? (
+              <img
+                src={session.user.image}
+                alt={session.user.name || "User"}
+                className="w-8 h-8 rounded-full transition-transform hover:scale-110"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-[var(--color-accent)] text-white flex items-center justify-center text-sm font-medium transition-transform hover:scale-110">
+                {session.user.name?.charAt(0).toUpperCase() || "U"}
+              </div>
+            )}
+            <span className="hidden md:inline text-base text-[var(--color-text-primary)]">
+              {session.user.name || session.user.email}
+            </span>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 12 12"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="text-[var(--color-text-secondary)] transition-transform"
+              style={{
+                transform: showUserMenu ? "rotate(180deg)" : "rotate(0deg)",
+              }}
             >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 16 16"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M6 14H3.33333C2.97971 14 2.64057 13.8595 2.39052 13.6095C2.14048 13.3594 2 13.0203 2 12.6667V3.33333C2 2.97971 2.14048 2.64057 2.39052 2.39052C2.64057 2.14048 2.97971 2 3.33333 2H6"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M10.6667 11.3333L14 8L10.6667 4.66667"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M14 8H6"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              <span>Sign Out</span>
-            </button>
-          </div>
+              <polyline points="3 4.5 6 7.5 9 4.5" />
+            </svg>
+          </button>
+
+          {/* Dropdown Menu */}
+          {showUserMenu && (
+            <>
+              <div
+                className="fixed inset-0 z-[var(--z-dropdown)]"
+                onClick={() => setShowUserMenu(false)}
+              />
+              <div className="absolute right-0 mt-2 w-64 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-lg shadow-[var(--shadow-xl)] z-[calc(var(--z-dropdown)+1)] animate-scaleIn overflow-hidden">
+                <div className="p-3 border-b border-[var(--color-border)]">
+                  <div className="px-3 py-2 text-sm text-[var(--color-text-secondary)]">
+                    {session.user.email}
+                  </div>
+                </div>
+                <div className="p-2">
+                  <Link
+                    href="/dashboard"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded text-base text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-all hover:translate-x-1"
+                    onClick={() => setShowUserMenu(false)}
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M2 8l6-6 6 6" />
+                      <path d="M3 7v7h10V7" />
+                      <path d="M6 14v-4h4v4" />
+                    </svg>
+                    <span>Home</span>
+                  </Link>
+                  <Link
+                    href="/settings"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded text-base text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-all hover:translate-x-1"
+                    onClick={() => setShowUserMenu(false)}
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <circle cx="8" cy="8" r="3" />
+                      <path d="M13.4 6.6l-1-1.8a1 1 0 0 0-1.4-.4l-.8.5a5 5 0 0 0-1.2-.7V3a1 1 0 0 0-1-1H6a1 1 0 0 0-1 1v1.2a5 5 0 0 0-1.2.7l-.8-.5a1 1 0 0 0-1.4.4l-1 1.8a1 1 0 0 0 .4 1.4l.8.4v1.2l-.8.4a1 1 0 0 0-.4 1.4l1 1.8a1 1 0 0 0 1.4.4l.8-.5a5 5 0 0 0 1.2.7V13a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-1.2a5 5 0 0 0 1.2-.7l.8.5a1 1 0 0 0 1.4-.4l1-1.8a1 1 0 0 0-.4-1.4l-.8-.4V7.4l.8-.4a1 1 0 0 0 .4-1.4z" />
+                    </svg>
+                    <span>Settings</span>
+                  </Link>
+                </div>
+                <div className="p-2 border-t border-[var(--color-border)]">
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      setShowConfirmModal(true);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded text-base text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-all hover:translate-x-1"
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M6 14H3.33333C2.97971 14 2.64057 13.8595 2.39052 13.6095C2.14048 13.3594 2 13.0203 2 12.6667V3.33333C2 2.97971 2.14048 2.64057 2.39052 2.39052C2.64057 2.14048 2.97971 2 3.33333 2H6" />
+                      <path d="M10.6667 11.3333L14 8L10.6667 4.66667" />
+                      <path d="M14 8H6" />
+                    </svg>
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </header>
 
-      {/* Confirmation Modal */}
+      {/* Sign Out Confirmation Modal */}
       {showConfirmModal && (
-        <div className="modal-overlay" onClick={() => !isSigningOut && setShowConfirmModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Confirm Sign Out</h2>
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[var(--z-modal-backdrop)] animate-fadeIn"
+          onClick={() => !isSigningOut && setShowConfirmModal(false)}
+        >
+          <div
+            className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl shadow-[var(--shadow-xl)] w-full max-w-lg mx-4 animate-scaleIn"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 border-b border-[var(--color-border)]">
+              <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
+                Sign Out
+              </h2>
             </div>
-            <div className="modal-body">
-              <p>Are you sure you want to sign out?</p>
-              <p className="modal-subtext">You'll need to sign in again to access your documents.</p>
+            <div className="p-6">
+              <p className="text-base text-[var(--color-text-secondary)] mb-3">
+                Are you sure you want to sign out?
+              </p>
+              <p className="text-sm text-[var(--color-text-tertiary)]">
+                You'll need to sign in again to access your documents.
+              </p>
             </div>
-            <div className="modal-actions">
+            <div className="p-6 border-t border-[var(--color-border)] flex items-center justify-end gap-3">
               <button
                 onClick={() => setShowConfirmModal(false)}
                 disabled={isSigningOut}
-                className="modal-button modal-button-secondary"
+                className="btn btn-ghost px-6 py-3 text-base"
                 type="button"
               >
                 Cancel
@@ -130,7 +214,7 @@ export default function Header() {
               <button
                 onClick={handleSignOut}
                 disabled={isSigningOut}
-                className="modal-button modal-button-danger"
+                className="btn btn-primary bg-[var(--color-error)] hover:bg-[var(--color-error)]/90 px-6 py-3 text-base"
                 type="button"
               >
                 {isSigningOut ? "Signing out..." : "Sign Out"}
@@ -139,266 +223,6 @@ export default function Header() {
           </div>
         </div>
       )}
-
-      <style jsx>{`
-        .header-container {
-          background: #ffffff;
-          border-bottom: 1px solid #e5e7eb;
-          padding: 0 24px;
-          height: 60px;
-          display: flex;
-          align-items: center;
-          position: sticky;
-          top: 0;
-          z-index: 100;
-          box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
-        }
-
-        .header-content {
-          max-width: 1400px;
-          margin: 0 auto;
-          width: 100%;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
-        .header-logo {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          cursor: pointer;
-          transition: opacity 0.2s;
-        }
-
-        .header-logo:hover {
-          opacity: 0.8;
-        }
-
-        .logo-icon {
-          font-size: 24px;
-        }
-
-        .logo-text {
-          font-size: 18px;
-          font-weight: 600;
-          color: #111827;
-        }
-
-        .header-actions {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-        }
-
-        .user-info {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 6px 12px;
-          border-radius: 8px;
-          background: #f9fafb;
-        }
-
-        .user-avatar {
-          width: 32px;
-          height: 32px;
-          border-radius: 50%;
-          object-fit: cover;
-        }
-
-        .user-avatar-fallback {
-          width: 32px;
-          height: 32px;
-          border-radius: 50%;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-weight: 600;
-          font-size: 14px;
-        }
-
-        .user-name {
-          font-size: 14px;
-          font-weight: 500;
-          color: #374151;
-          max-width: 150px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-
-        .skeleton-avatar {
-          width: 32px;
-          height: 32px;
-          border-radius: 50%;
-          background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
-          background-size: 200% 100%;
-          animation: shimmer 1.5s infinite;
-        }
-
-        @keyframes shimmer {
-          0% {
-            background-position: 200% 0;
-          }
-          100% {
-            background-position: -200% 0;
-          }
-        }
-
-        .logout-button {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          padding: 8px 16px;
-          background: transparent;
-          border: 1px solid #d1d5db;
-          border-radius: 6px;
-          color: #374151;
-          font-size: 14px;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .logout-button:hover {
-          background: #f9fafb;
-          border-color: #9ca3af;
-          color: #111827;
-        }
-
-        .logout-button:active {
-          transform: scale(0.98);
-        }
-
-        /* Modal styles */
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-          animation: fadeIn 0.2s ease-out;
-        }
-
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-          }
-          to {
-            opacity: 1;
-          }
-        }
-
-        .modal-content {
-          background: white;
-          border-radius: 12px;
-          padding: 0;
-          max-width: 400px;
-          width: 90%;
-          box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-          animation: slideUp 0.2s ease-out;
-        }
-
-        @keyframes slideUp {
-          from {
-            transform: translateY(20px);
-            opacity: 0;
-          }
-          to {
-            transform: translateY(0);
-            opacity: 1;
-          }
-        }
-
-        .modal-header {
-          padding: 24px 24px 16px;
-          border-bottom: 1px solid #e5e7eb;
-        }
-
-        .modal-header h2 {
-          margin: 0;
-          font-size: 18px;
-          font-weight: 600;
-          color: #111827;
-        }
-
-        .modal-body {
-          padding: 24px;
-        }
-
-        .modal-body p {
-          margin: 0 0 8px;
-          font-size: 14px;
-          color: #374151;
-        }
-
-        .modal-subtext {
-          font-size: 13px;
-          color: #6b7280;
-        }
-
-        .modal-actions {
-          padding: 16px 24px 24px;
-          display: flex;
-          justify-content: flex-end;
-          gap: 12px;
-        }
-
-        .modal-button {
-          padding: 10px 20px;
-          border-radius: 6px;
-          font-size: 14px;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.2s;
-          border: none;
-        }
-
-        .modal-button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .modal-button-secondary {
-          background: #f3f4f6;
-          color: #374151;
-        }
-
-        .modal-button-secondary:hover:not(:disabled) {
-          background: #e5e7eb;
-        }
-
-        .modal-button-danger {
-          background: #ef4444;
-          color: white;
-        }
-
-        .modal-button-danger:hover:not(:disabled) {
-          background: #dc2626;
-        }
-
-        @media (max-width: 768px) {
-          .header-container {
-            padding: 0 16px;
-          }
-
-          .user-name {
-            display: none;
-          }
-
-          .logout-button span {
-            display: none;
-          }
-        }
-      `}</style>
     </>
   );
 }

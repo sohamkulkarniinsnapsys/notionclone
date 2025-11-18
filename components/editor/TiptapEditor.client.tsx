@@ -1,17 +1,17 @@
-'use client'
+"use client";
 
-import { useEffect } from 'react'
-import { EditorContent, useEditor } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
-import Placeholder from '@tiptap/extension-placeholder'
-import BulletList from "@tiptap/extension-bullet-list"
-import OrderedList from "@tiptap/extension-ordered-list"
-import { PageBlock } from '../extensions/PageBlock'
+import { useEffect } from "react";
+import { EditorContent, useEditor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import Placeholder from "@tiptap/extension-placeholder";
+import BulletList from "@tiptap/extension-bullet-list";
+import OrderedList from "@tiptap/extension-ordered-list";
+import { PageBlock } from "../extensions/PageBlock";
 
 type Props = {
-  docId: string
-  initialContent?: any | null
-}
+  docId: string;
+  initialContent?: any | null;
+};
 
 /**
  * Lightweight, autosaving TipTap editor
@@ -26,54 +26,54 @@ export default function TiptapEditor({ docId, initialContent }: Props) {
       }),
       PageBlock,
     ],
-    content: initialContent ?? '<p></p>',
+    content: initialContent ?? "<p></p>",
     immediatelyRender: false,
     editorProps: {
       attributes: {
         class:
-          'tiptap-content focus:outline-none bg-white text-black caret-black min-h-[300px] p-3 rounded-md border border-gray-200',
+          "tiptap-content focus:outline-none min-h-[300px] p-3 rounded-md border border-[var(--color-border)]",
         style:
-          'background:#ffffff; color:#000000; caret-color:#000000; font-size:15px; line-height:1.6;',
+          "background:var(--color-bg-primary); color:var(--color-text-primary); caret-color:var(--color-text-primary); font-size:15px; line-height:1.6;",
       },
     },
-  })
+  });
 
   // Debounced autosave on document updates
   useEffect(() => {
-    if (!editor) return
+    if (!editor) return;
 
     const handler = debounce(async () => {
       try {
-        const json = editor.getJSON()
-        const html = editor.getHTML()
+        const json = editor.getJSON();
+        const html = editor.getHTML();
         await fetch(`/api/docs/${encodeURIComponent(docId)}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contentJson: json,
             contentHtml: html,
           }),
-        })
-        console.log('[TiptapEditor] Auto-saved')
+        });
+        console.log("[TiptapEditor] Auto-saved");
       } catch (err) {
-        console.warn('[TiptapEditor] Autosave failed', err)
+        console.warn("[TiptapEditor] Autosave failed", err);
       }
-    }, 1500)
+    }, 1500);
 
-    editor.on('update', handler)
+    editor.on("update", handler);
     return () => {
-      editor.off('update', handler)
-      handler.cancel && handler.cancel()
-    }
-  }, [editor, docId])
+      editor.off("update", handler);
+      handler.cancel && handler.cancel();
+    };
+  }, [editor, docId]);
 
   return (
     <div
       style={{
-        border: '1px solid #e5e7eb',
+        border: "1px solid #e5e7eb",
         borderRadius: 8,
         padding: 12,
-        background: 'white',
+        background: "white",
       }}
     >
       {editor ? (
@@ -81,9 +81,9 @@ export default function TiptapEditor({ docId, initialContent }: Props) {
       ) : (
         <div
           style={{
-            textAlign: 'center',
+            textAlign: "center",
             padding: 24,
-            color: '#9ca3af',
+            color: "#9ca3af",
           }}
         >
           Loading editor…
@@ -94,9 +94,9 @@ export default function TiptapEditor({ docId, initialContent }: Props) {
         /* Ensure readable text colors across themes */
         .tiptap-content,
         .ProseMirror {
-          background: #ffffff !important;
-          color: #111827 !important;
-          caret-color: #111827 !important;
+          background: var(--color-bg-primary) !important;
+          color: var(--color-text-primary) !important;
+          caret-color: var(--color-text-primary) !important;
         }
 
         .ProseMirror p.is-editor-empty:first-child::before {
@@ -108,24 +108,24 @@ export default function TiptapEditor({ docId, initialContent }: Props) {
         }
       `}</style>
     </div>
-  )
+  );
 }
 
 /**
  * Safe debounce helper with cancel()
  */
 function debounce<T extends (...args: any[]) => void>(fn: T, ms = 200) {
-  let t: ReturnType<typeof setTimeout> | null = null
-  let canceled = false
+  let t: ReturnType<typeof setTimeout> | null = null;
+  let canceled = false;
   const wrapper = (...args: Parameters<T>) => {
-    if (t) clearTimeout(t)
+    if (t) clearTimeout(t);
     t = setTimeout(() => {
-      if (!canceled) fn(...args)
-    }, ms)
-  }
-  ;(wrapper as any).cancel = () => {
-    canceled = true
-    if (t) clearTimeout(t)
-  }
-  return wrapper as T & { cancel?: () => void }
+      if (!canceled) fn(...args);
+    }, ms);
+  };
+  (wrapper as any).cancel = () => {
+    canceled = true;
+    if (t) clearTimeout(t);
+  };
+  return wrapper as T & { cancel?: () => void };
 }

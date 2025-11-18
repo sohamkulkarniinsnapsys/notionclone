@@ -3,11 +3,16 @@
 import { useState } from "react";
 
 interface InviteFormProps {
-  documentId: string;
+  resourceId: string;
+  resourceType: "document" | "workspace";
   onClose: () => void;
 }
 
-export default function InviteForm({ documentId, onClose }: InviteFormProps) {
+export default function InviteForm({
+  resourceId,
+  resourceType,
+  onClose,
+}: InviteFormProps) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"VIEWER" | "EDITOR">("EDITOR");
   const [isLoading, setIsLoading] = useState(false);
@@ -26,7 +31,12 @@ export default function InviteForm({ documentId, onClose }: InviteFormProps) {
     setError(null);
 
     try {
-      const response = await fetch(`/api/documents/${documentId}/invite`, {
+      const endpoint =
+        resourceType === "document"
+          ? `/api/documents/${resourceId}/invite`
+          : `/api/workspaces/${resourceId}/invite`;
+
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -56,47 +66,23 @@ export default function InviteForm({ documentId, onClose }: InviteFormProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div
-          style={{
-            padding: 12,
-            marginBottom: 16,
-            background: "#fee2e2",
-            color: "#991b1b",
-            borderRadius: 6,
-            fontSize: 14,
-          }}
-        >
+        <div className="p-3 bg-[var(--color-error-bg)] border border-[var(--color-error)] rounded-md text-sm text-[var(--color-error)]">
           {error}
         </div>
       )}
 
       {success && (
-        <div
-          style={{
-            padding: 12,
-            marginBottom: 16,
-            background: "#d1fae5",
-            color: "#065f46",
-            borderRadius: 6,
-            fontSize: 14,
-          }}
-        >
-          Invitation sent successfully!
+        <div className="p-3 bg-[var(--color-success-bg)] border border-[var(--color-success)] rounded-md text-sm text-[var(--color-success)]">
+          ✓ Invitation sent successfully!
         </div>
       )}
 
-      <div style={{ marginBottom: 16 }}>
+      <div>
         <label
           htmlFor="email"
-          style={{
-            display: "block",
-            marginBottom: 8,
-            fontSize: 14,
-            fontWeight: 500,
-            color: "#374151",
-          }}
+          className="block text-sm font-medium text-[var(--color-text-primary)] mb-2"
         >
           Email Address
         </label>
@@ -107,85 +93,50 @@ export default function InviteForm({ documentId, onClose }: InviteFormProps) {
           onChange={(e) => setEmail(e.target.value)}
           placeholder="colleague@example.com"
           disabled={isLoading || success}
-          style={{
-            width: "100%",
-            padding: "8px 12px",
-            border: "1px solid #d1d5db",
-            borderRadius: 6,
-            fontSize: 14,
-            outline: "none",
-          }}
+          className="input"
           required
         />
       </div>
 
-      <div style={{ marginBottom: 20 }}>
+      <div>
         <label
           htmlFor="role"
-          style={{
-            display: "block",
-            marginBottom: 8,
-            fontSize: 14,
-            fontWeight: 500,
-            color: "#374151",
-          }}
+          className="block text-sm font-medium text-[var(--color-text-primary)] mb-2"
         >
-          Role
+          Access Level
         </label>
         <select
           id="role"
           value={role}
           onChange={(e) => setRole(e.target.value as "VIEWER" | "EDITOR")}
           disabled={isLoading || success}
-          style={{
-            width: "100%",
-            padding: "8px 12px",
-            border: "1px solid #d1d5db",
-            borderRadius: 6,
-            fontSize: 14,
-            outline: "none",
-            background: "white",
-          }}
+          className="input"
         >
-          <option value="VIEWER">Viewer (can view only)</option>
-          <option value="EDITOR">Editor (can edit)</option>
+          <option value="VIEWER">Can view</option>
+          <option value="EDITOR">Can edit</option>
         </select>
+        <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
+          {role === "VIEWER"
+            ? "Can view but not make changes"
+            : "Can view and edit content"}
+        </p>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+      <div className="flex items-center justify-end gap-2 pt-2">
         <button
           type="button"
           onClick={onClose}
           disabled={isLoading}
-          style={{
-            padding: "8px 16px",
-            border: "1px solid #d1d5db",
-            borderRadius: 6,
-            background: "white",
-            color: "#374151",
-            fontSize: 14,
-            fontWeight: 500,
-            cursor: isLoading ? "not-allowed" : "pointer",
-            opacity: isLoading ? 0.6 : 1,
-          }}
+          className="btn btn-ghost"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={isLoading || success}
-          style={{
-            padding: "8px 16px",
-            border: "none",
-            borderRadius: 6,
-            background: isLoading || success ? "#9ca3af" : "#2563eb",
-            color: "white",
-            fontSize: 14,
-            fontWeight: 500,
-            cursor: isLoading || success ? "not-allowed" : "pointer",
-          }}
+          className="btn btn-primary"
         >
-          {isLoading ? "Sending..." : success ? "Sent!" : "Send Invitation"}
+          {isLoading ? "Sending..." : success ? "Sent!" : "Send Invite"}
         </button>
       </div>
     </form>

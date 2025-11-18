@@ -31,7 +31,7 @@ export default function CollaborativeEditor({ documentId, user }: Props) {
         const res = await axios.get(`/api/docs/${documentId}/snapshot`);
         if (res.data?.snapshot) {
           const raw = Uint8Array.from(atob(res.data.snapshot), (c) =>
-            c.charCodeAt(0)
+            c.charCodeAt(0),
           );
           Y.applyUpdate(ydoc, raw);
           console.log("[CollaborativeEditor] Snapshot applied");
@@ -117,9 +117,9 @@ export default function CollaborativeEditor({ documentId, user }: Props) {
     editorProps: {
       attributes: {
         class:
-          "tiptap-content focus:outline-none bg-white text-black caret-black min-h-[300px] p-3 rounded-md border border-gray-200",
+          "tiptap-content focus:outline-none min-h-[300px] p-3 rounded-md border border-[var(--color-border)]",
         style:
-          "background:#fff;color:#000;caret-color:#000;min-height:300px;padding:12px;",
+          "background:var(--color-bg-primary);color:var(--color-text-primary);caret-color:var(--color-text-primary);min-height:300px;padding:12px;",
       },
     },
   });
@@ -139,18 +139,7 @@ export default function CollaborativeEditor({ documentId, user }: Props) {
 
   return (
     <div>
-      <button
-        onClick={saveSnapshot}
-        style={{
-          padding: "6px 12px",
-          background: "#3b82f6",
-          color: "#fff",
-          border: "none",
-          borderRadius: 4,
-          cursor: "pointer",
-          marginBottom: 8,
-        }}
-      >
+      <button onClick={saveSnapshot} className="btn btn-primary mb-2">
         💾 Save Snapshot
       </button>
 
@@ -168,9 +157,9 @@ export default function CollaborativeEditor({ documentId, user }: Props) {
       <style jsx global>{`
         .tiptap-content,
         .ProseMirror {
-          background: #ffffff !important;
-          color: #111827 !important;
-          caret-color: #111827 !important;
+          background: var(--color-bg-primary) !important;
+          color: var(--color-text-primary) !important;
+          caret-color: var(--color-text-primary) !important;
         }
       `}</style>
     </div>

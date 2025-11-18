@@ -40,7 +40,7 @@ export default async function DashboardPage() {
       })
     : [];
 
-  // Load pending invites for the signed-in user's email (guard if model isn't generated yet)
+  // Load pending invites
   let invites: any[] = [];
   try {
     const prismaAny = prisma as any;
@@ -55,7 +55,7 @@ export default async function DashboardPage() {
     invites = [];
   }
 
-  // Simple "create document" action via POST to /api/documents
+  // Create document action
   async function createDoc(formData: FormData) {
     "use server";
     const sessionInner = await getSession();
@@ -65,11 +65,8 @@ export default async function DashboardPage() {
     const wsId = String(formData.get("workspaceId") || "");
     if (!wsId) return;
 
-    // Use empty string as initial title (user will name it in-editor)
-    // This relies on your DB allowing empty string (Prisma: String is required but can be empty)
     const title = String(formData.get("title") ?? "").trim();
 
-    // Verify access
     const member = await prisma.workspaceMember.findFirst({
       where: { userId: sessionInner.user.id, workspaceId: wsId },
     });
@@ -77,7 +74,7 @@ export default async function DashboardPage() {
 
     const doc = await prisma.document.create({
       data: {
-        title: title, // could be "" — editor will prompt user to name
+        title: title || "Untitled",
         workspaceId: wsId,
         createdBy: sessionInner.user.id,
         ownerId: sessionInner.user.id,
@@ -85,13 +82,10 @@ export default async function DashboardPage() {
       select: { id: true, workspaceId: true },
     });
 
-    // Redirect to document and flag it as newly created so the editor can auto-open the title input
-    redirect(
-      `/workspace/${doc.workspaceId}/documents/${doc.id}${title ? "" : "?new=true"}`
-    );
+    redirect(`/workspace/${doc.workspaceId}/documents/${doc.id}`);
   }
 
-  // Create a new workspace action
+  // Create workspace action
   async function createWorkspace(formData: FormData) {
     "use server";
     const sessionInner = await getSession();
@@ -100,7 +94,8 @@ export default async function DashboardPage() {
     }
     const name = String(formData.get("name") || "").trim();
     if (!name) return;
-    const ws = await prisma.workspace.create({
+
+    await prisma.workspace.create({
       data: {
         name,
         ownerId: sessionInner.user.id,
@@ -111,160 +106,179 @@ export default async function DashboardPage() {
           },
         },
       },
-      select: { id: true },
     });
-    redirect(`/dashboard`);
-  }
-
-  // Accept invite
-  async function acceptInvite(formData: FormData) {
-    "use server";
-    const sessionInner = await getSession();
-    if (!sessionInner?.user) redirect("/auth/signin");
-    const inviteId = String(formData.get("inviteId") || "");
-    if (!inviteId) return;
-    await fetch(
-      `${process.env.NEXTAUTH_URL ?? ""}/api/invites/${inviteId}/accept`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-      },
-    );
-    redirect("/dashboard");
-  }
-
-  // Decline invite
-  async function declineInvite(formData: FormData) {
-    "use server";
-    const sessionInner = await getSession();
-    if (!sessionInner?.user) redirect("/auth/signin");
-    const inviteId = String(formData.get("inviteId") || "");
-    if (!inviteId) return;
-    await fetch(
-      `${process.env.NEXTAUTH_URL ?? ""}/api/invites/${inviteId}/decline`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-      },
-    );
     redirect("/dashboard");
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 960, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>
-        Dashboard
-      </h1>
-
-      <DashboardClient
-        memberships={memberships}
-        recentDocuments={recentDocuments}
-        userId={session.user.id}
-      />
-
-      <section style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
-          Create Workspace
-        </h2>
-        <form
-          action={createWorkspace}
-          style={{ display: "flex", gap: 8, alignItems: "center" }}
-        >
-          <input
-            name="name"
-            placeholder="Workspace name"
-            required
-            style={{
-              padding: 8,
-              border: "1px solid #ddd",
-              borderRadius: 6,
-              flex: 1,
-            }}
-          />
-          <button
-            type="submit"
-            style={{
-              padding: "8px 12px",
-              background: "#111827",
-              color: "white",
-              border: 0,
-              borderRadius: 6,
-              cursor: "pointer",
-            }}
-          >
-            Create
-          </button>
-        </form>
-      </section>
-
-      <section style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
-          New Document
-        </h2>
-        {memberships.length === 0 ? (
-          <div style={{ color: "#666" }}>
-            No workspace to create a document.
-          </div>
-        ) : (
-          <form
-            action={createDoc}
-            style={{ display: "flex", gap: 8, alignItems: "center" }}
-          >
-            <select
-              name="workspaceId"
-              defaultValue={memberships[0]?.workspace.id}
-              style={{
-                padding: 8,
-                border: "1px solid #ddd",
-                borderRadius: 6,
-              }}
-            >
-              {memberships.map((m: any) => (
-                <option key={m.workspace.id} value={m.workspace.id}>
-                  {m.workspace.name}
-                </option>
-              ))}
-            </select>
-            <input
-              name="title"
-              placeholder="Untitled"
-              style={{
-                padding: 8,
-                border: "1px solid #ddd",
-                borderRadius: 6,
-                flex: 1,
-              }}
-            />
-            <button
-              type="submit"
-              style={{
-                padding: "8px 12px",
-                background: "#2563eb",
-                color: "white",
-                border: 0,
-                borderRadius: 6,
-                cursor: "pointer",
-              }}
-            >
-              Create
-            </button>
-          </form>
-        )}
-      </section>
-
-      {invites && invites.length > 0 && (
-        <section style={{ marginTop: 24 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
-            Pending Invites
+    <div className="flex h-full">
+      {/* Sidebar */}
+      <aside className="hidden md:flex w-60 border-r border-[var(--color-border)] bg-[var(--color-bg-secondary)] flex-col">
+        <div className="p-4 border-b border-[var(--color-border)]">
+          <h2 className="text-base font-semibold text-[var(--color-text-primary)] mb-3">
+            Quick Actions
           </h2>
-          <div style={{ color: "#666" }}>
-            You have {invites.length} pending invite
-            {invites.length !== 1 ? "s" : ""}. Check your email.
+          {memberships.length > 0 && (
+            <form action={createDoc} className="space-y-2">
+              <select
+                name="workspaceId"
+                defaultValue={memberships[0]?.workspace.id}
+                className="input w-full text-base"
+                required
+              >
+                {memberships.map((m: any) => (
+                  <option key={m.workspace.id} value={m.workspace.id}>
+                    {m.workspace.name}
+                  </option>
+                ))}
+              </select>
+              <button type="submit" className="btn btn-primary w-full text-base">
+                + New Document
+              </button>
+            </form>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4">
+          <h3 className="text-sm font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide mb-2">
+            Workspaces
+          </h3>
+          <div className="space-y-1">
+            {memberships.map((m: any) => (
+              <Link
+                key={m.workspace.id}
+                href={`/workspace/${m.workspace.id}`}
+                className="flex items-center gap-2 px-2 py-1.5 rounded text-base text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                <span>📁</span>
+                <span className="truncate">{m.workspace.name}</span>
+              </Link>
+            ))}
           </div>
-        </section>
-      )}
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto">
+        <div className="max-w-5xl mx-auto p-8">
+          {/* Header */}
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-[var(--color-text-primary)] mb-2">
+              Welcome back, {session.user.name || "User"}
+            </h1>
+            <p className="text-[var(--color-text-secondary)]">
+              Here's what you've been working on
+            </p>
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div className="card">
+              <div className="text-2xl font-bold text-[var(--color-text-primary)] mb-1">
+                {memberships.length}
+              </div>
+              <div className="text-base text-[var(--color-text-secondary)]">
+                Workspaces
+              </div>
+            </div>
+            <div className="card">
+              <div className="text-2xl font-bold text-[var(--color-text-primary)] mb-1">
+                {recentDocuments.length}
+              </div>
+              <div className="text-base text-[var(--color-text-secondary)]">
+                Recent Documents
+              </div>
+            </div>
+            <div className="card">
+              <div className="text-2xl font-bold text-[var(--color-text-primary)] mb-1">
+                {invites.length}
+              </div>
+              <div className="text-base text-[var(--color-text-secondary)]">
+                Pending Invites
+              </div>
+            </div>
+          </div>
+
+          {/* Create Workspace */}
+          <section className="mb-8">
+            <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-4">
+              Create Workspace
+            </h2>
+            <form action={createWorkspace} className="flex gap-2">
+              <input
+                name="name"
+                placeholder="Workspace name"
+                required
+                className="input flex-1"
+              />
+              <button type="submit" className="btn btn-primary">
+                Create
+              </button>
+            </form>
+          </section>
+
+          {/* Workspaces Grid */}
+          {memberships.length > 0 && (
+            <section className="mb-8">
+              <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-4">
+                Your Workspaces
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {memberships.map((m: any) => (
+                  <Link
+                    key={m.workspace.id}
+                    href={`/workspace/${m.workspace.id}`}
+                    className="card hover:shadow-[var(--shadow-md)] transition-shadow"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <span className="text-2xl">📁</span>
+                    </div>
+                    <h3 className="font-semibold text-[var(--color-text-primary)] mb-1">
+                      {m.workspace.name}
+                    </h3>
+                    <p className="text-sm text-[var(--color-text-secondary)]">
+                      {m.role}
+                    </p>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Recent Documents */}
+          <section>
+            <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-4">
+              Recent Documents
+            </h2>
+            {recentDocuments.length === 0 ? (
+              <div className="card text-center py-12">
+                <div className="text-4xl mb-3">📄</div>
+                <p className="text-[var(--color-text-secondary)] mb-4">
+                  No documents yet
+                </p>
+                {memberships.length > 0 && (
+                  <form action={createDoc} className="inline-block">
+                    <input
+                      type="hidden"
+                      name="workspaceId"
+                      value={memberships[0]?.workspace.id}
+                    />
+                    <button type="submit" className="btn btn-primary">
+                      Create your first document
+                    </button>
+                  </form>
+                )}
+              </div>
+            ) : (
+              <DashboardClient
+                memberships={memberships}
+                recentDocuments={recentDocuments}
+                userId={session.user.id}
+              />
+            )}
+          </section>
+        </div>
+      </main>
     </div>
   );
 }

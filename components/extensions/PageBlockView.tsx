@@ -101,22 +101,24 @@ export default function PageBlockView({
           textDecoration: "none",
           color: "inherit",
           padding: "12px",
-          border: selected ? "2px solid #2563eb" : "1px solid #e5e7eb",
+          border: selected
+            ? "2px solid var(--color-accent)"
+            : "1px solid var(--color-border)",
           borderRadius: "8px",
-          background: "#fff",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+          background: "var(--color-bg-primary)",
+          boxShadow: "var(--shadow-sm)",
           cursor: "pointer",
           transition: "all 0.2s ease",
           position: "relative",
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.borderColor = "#2563eb";
-          e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.1)";
+          e.currentTarget.style.borderColor = "var(--color-accent)";
+          e.currentTarget.style.boxShadow = "var(--shadow-md)";
         }}
         onMouseLeave={(e) => {
           if (!selected) {
-            e.currentTarget.style.borderColor = "#e5e7eb";
-            e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
+            e.currentTarget.style.borderColor = "var(--color-border)";
+            e.currentTarget.style.boxShadow = "var(--shadow-sm)";
           }
         }}
       >

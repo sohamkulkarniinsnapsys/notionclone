@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
+import Link from "next/link";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import { Awareness as YAwareness } from "y-protocols/awareness";
@@ -1321,344 +1322,221 @@ export default function DocPage() {
   );
 
   const renderUnauthenticated = (
-    <div
-      style={{
-        paddingLeft: 20,
-        paddingRight: 20,
-        paddingBottom: 20,
-        paddingTop: 100,
-        textAlign: "center",
-      }}
-    >
-      <div style={{ fontSize: 24, marginBottom: 16 }}>🔒</div>
-      <div style={{ color: "#6b7280", marginBottom: 16 }}>
-        Please sign in to access this document
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center">
+        <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-2">
+          Authentication Required
+        </h2>
+        <p className="text-base text-[var(--color-text-secondary)] mb-4">
+          Please sign in to access this document
+        </p>
+        <Link href="/auth/signin" className="btn btn-primary">
+          Sign In
+        </Link>
       </div>
-      <a
-        href="/api/auth/signin"
-        style={{
-          display: "inline-block",
-          padding: "8px 16px",
-          background: "#3b82f6",
-          color: "white",
-          borderRadius: 8,
-          textDecoration: "none",
-        }}
-      >
-        Sign In
-      </a>
     </div>
   );
 
   const renderNoDocId = (
-    <div style={{ padding: 20 }}>
-      <h2 style={{ color: "#ef4444" }}>Error: No Document ID</h2>
-      <p>Please provide a valid document ID in the URL.</p>
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center">
+        <h2 className="text-lg font-semibold text-[var(--color-error)] mb-2">
+          No Document ID
+        </h2>
+        <p className="text-base text-[var(--color-text-secondary)]">
+          Please provide a valid document ID in the URL.
+        </p>
+      </div>
     </div>
   );
 
   // The main editor UI (extracted from your original main return)
   const mainEditorUI = (
-    <>
+    <div className="flex flex-col h-full">
       {/* Document Header */}
-      <div
-        style={{
-          padding: "12px 24px",
-          borderBottom: "1px solid #e5e7eb",
-          background: "#fff",
-          position: "sticky",
-          top: 0,
-          zIndex: 1000,
-          minHeight: "60px", // Prevent layout shift during load
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          {/* Breadcrumb */}
-          <div
-            style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}
-          >
-            <button
-              onClick={() => router.push(`/workspace/${workspaceId}/documents`)}
-              style={{
-                background: "none",
-                border: "none",
-                color: "#6b7280",
-                cursor: "pointer",
-                fontSize: 14,
-                padding: "4px 8px",
-                borderRadius: 4,
-              }}
-            >
-              ← Documents
-            </button>
-            <span style={{ color: "#d1d5db" }}>/</span>
-
-            {/* Document Title */}
-            {isLoadingDoc ? (
-              <div
-                style={{
-                  width: 200,
-                  height: 28,
-                  background: "#f3f4f6",
-                  borderRadius: 4,
-                  animation: "pulse 1.5s infinite",
-                }}
-              />
-            ) : isEditingTitle ? (
-              <input
-                type="text"
-                value={titleInput}
-                onChange={(e) => setTitleInput(e.target.value)}
-                onBlur={handleTitleSave}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleTitleSave();
-                  if (e.key === "Escape") {
-                    setTitleInput(documentTitle);
-                    setIsEditingTitle(false);
-                  }
-                }}
-                autoFocus
-                style={{
-                  fontSize: 18,
-                  fontWeight: 600,
-                  color: "#111827",
-                  border: "1px solid #3b82f6",
-                  borderRadius: 4,
-                  padding: "4px 8px",
-                  outline: "none",
-                  width: 300,
-                }}
-              />
-            ) : (
-              <h1
-                onClick={() => setIsEditingTitle(true)}
-                style={{
-                  fontSize: 18,
-                  fontWeight: 600,
-                  color: "#111827",
-                  margin: 0,
-                  cursor: "pointer",
-                  padding: "4px 8px",
-                  borderRadius: 4,
-                  transition: "background 0.15s",
-                }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.background = "#f9fafb")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.background = "transparent")
-                }
+      <div className="border-b border-[var(--color-border)] bg-[var(--color-bg-primary)] sticky top-0 z-[var(--z-sticky)]">
+        <div className="editor-container py-4">
+          <div className="flex items-center justify-between gap-4">
+            {/* Left: Breadcrumb & Title */}
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <Link
+                href={`/workspace/${workspaceId}/documents`}
+                className="text-base text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors flex items-center gap-1"
               >
-                {documentTitle || "Untitled"}
-              </h1>
-            )}
-          </div>
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M10 12L6 8l4-4" />
+                </svg>
+                Documents
+              </Link>
+              <span className="text-[var(--color-text-tertiary)]">/</span>
 
-          {/* Action Buttons */}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              onClick={() => {
-                if (manualSaveRef.current) {
-                  manualSaveRef.current();
-                }
-              }}
-              disabled={isSaving}
-              style={{
-                padding: "6px 12px",
-                background: isSaving ? "#c7d2fe" : "#10b981",
-                color: "white",
-                border: "none",
-                borderRadius: 6,
-                cursor: isSaving ? "not-allowed" : "pointer",
-                fontSize: 14,
-                fontWeight: 500,
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-              title={isSaving ? "Saving..." : "Save"}
-            >
-              {isSaving ? "Saving..." : "Save"}
-            </button>
+              {/* Document Title */}
+              {isLoadingDoc ? (
+                <div className="w-40 h-6 skeleton" />
+              ) : isEditingTitle ? (
+                <input
+                  type="text"
+                  value={titleInput}
+                  onChange={(e) => setTitleInput(e.target.value)}
+                  onBlur={handleTitleSave}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleTitleSave();
+                    if (e.key === "Escape") {
+                      setTitleInput(documentTitle);
+                      setIsEditingTitle(false);
+                    }
+                  }}
+                  autoFocus
+                  className="input text-xl font-semibold py-1 px-2 w-64"
+                />
+              ) : (
+                <h1
+                  onClick={() => setIsEditingTitle(true)}
+                  className="text-xl font-semibold text-[var(--color-text-primary)] cursor-pointer px-2 py-1 rounded hover:bg-[var(--color-bg-hover)] transition-colors truncate"
+                >
+                  {documentTitle || "Untitled"}
+                </h1>
+              )}
+            </div>
 
-            <button
-              onClick={() => setShowInviteModal(true)}
-              style={{
-                padding: "6px 12px",
-                background: "#3b82f6",
-                color: "white",
-                border: "none",
-                borderRadius: 6,
-                cursor: "pointer",
-                fontSize: 14,
-                fontWeight: 500,
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 16 16"
-                fill="currentColor"
+            {/* Right: Action Buttons */}
+            <div className="flex items-center gap-2">
+              {isSaving && (
+                <span className="text-xs text-[var(--color-text-secondary)] flex items-center gap-1">
+                  <span className="animate-pulse">●</span>
+                  Saving...
+                </span>
+              )}
+              <button
+                onClick={() => setShowInviteModal(true)}
+                className="btn btn-ghost text-base"
               >
-                <path d="M8 2a3 3 0 100 6 3 3 0 000-6zM4 8a4 4 0 118 0 4 4 0 01-8 0zm9.5 3a1.5 1.5 0 100 3 1.5 1.5 0 000-3zm-2.5 1.5a2.5 2.5 0 115 0 2.5 2.5 0 01-5 0z" />
-                <path d="M12 13h.5a.5.5 0 01.5.5v.5a.5.5 0 01-1 0v-.5a.5.5 0 01.5-.5zM4.5 14h7a.5.5 0 010 1h-7a.5.5 0 010-1z" />
-              </svg>
-              Invite
-            </button>
-            <button
-              onClick={() => setShowDeleteModal(true)}
-              style={{
-                padding: "6px 12px",
-                background: "transparent",
-                color: "#ef4444",
-                border: "1px solid #ef4444",
-                borderRadius: 6,
-                cursor: "pointer",
-                fontSize: 14,
-                fontWeight: 500,
-              }}
-            >
-              Delete
-            </button>
+                Share
+              </button>
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="btn btn-ghost text-base text-[var(--color-text-secondary)] hover:text-[var(--color-error)]"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M2 4h12" />
+                  <path d="M5.5 4V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1" />
+                  <path d="M6.5 7.5v4" />
+                  <path d="M9.5 7.5v4" />
+                  <path d="M3.5 4v9a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V4" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div
-        style={{
-          paddingLeft: 24,
-          paddingRight: 24,
-          paddingBottom: 60,
-          paddingTop: 24,
-          minHeight: "400px", // Prevent layout shift when editor loads
-        }}
-      >
-        <PresenceBar awareness={awareness} />
+      <div className="flex-1 overflow-y-auto">
+        <div className="editor-container animate-fadeIn">
+          <PresenceBar awareness={awareness} />
 
-        {error && (
-          <div
-            style={{
-              padding: 12,
-              background: "#fee2e2",
-              color: "#991b1b",
-              borderRadius: 6,
-              marginBottom: 16,
-            }}
-          >
-            {error}
-          </div>
-        )}
+          {error && (
+            <div className="mb-4 p-3 bg-[var(--color-error-bg)] border border-[var(--color-error)] rounded-md text-base text-[var(--color-error)]">
+              {error}
+            </div>
+          )}
 
-        {!isReady ? (
-          <div style={{ textAlign: "center", padding: 40 }}>
-            <div style={{ fontSize: 18, color: "#6b7280", marginBottom: 8 }}>
-              {status === "error"
-                ? "❌ Failed to load"
-                : status === "connecting"
-                  ? "🔄 Connecting..."
-                  : "⏳ Loading..."}
+          {!isReady ? (
+            <div className="text-center py-20">
+              <div className="text-lg text-[var(--color-text-secondary)] mb-2">
+                {status === "error"
+                  ? "❌ Failed to load"
+                  : status === "connecting"
+                    ? "🔄 Connecting..."
+                    : "⏳ Loading..."}
+              </div>
+              <div className="text-base text-[var(--color-text-tertiary)]">
+                {status === "error"
+                  ? error || "Please refresh the page"
+                  : status === "connecting"
+                    ? "Establishing connection to collaboration server..."
+                    : "Initializing editor..."}
+              </div>
             </div>
-            <div style={{ fontSize: 14, color: "#9ca3af" }}>
-              {status === "error"
-                ? error || "Please refresh the page"
-                : status === "connecting"
-                  ? "Establishing connection to collaboration server..."
-                  : "Initializing editor..."}
+          ) : ydoc && provider && hasValidAwareness ? (
+            <TiptapEditor
+              ydoc={ydoc!}
+              provider={provider!}
+              awareness={awareness}
+              user={user!}
+              docId={docId!}
+              collab={true}
+            />
+          ) : (
+            <div className="text-center py-12 text-[var(--color-text-secondary)]">
+              <div className="text-base mb-2">
+                Waiting for collaboration subsystem...
+              </div>
+              <div className="text-xs text-[var(--color-text-tertiary)]">
+                Presence or provider not fully initialized yet. If this
+                persists, try refreshing the page.
+              </div>
             </div>
-          </div>
-        ) : ydoc && provider && hasValidAwareness ? (
-          <TiptapEditor
-            ydoc={ydoc!}
-            provider={provider!}
-            awareness={awareness}
-            user={user!}
-            docId={docId!}
-            collab={true}
-          />
-        ) : (
-          <div style={{ textAlign: "center", padding: 24, color: "#6b7280" }}>
-            <div style={{ fontSize: 16, marginBottom: 8 }}>
-              Waiting for collaboration subsystem...
-            </div>
-            <div style={{ fontSize: 13 }}>
-              Presence or provider not fully initialized yet. If this persists,
-              try refreshing the page.
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Delete Confirmation Modal */}
+      {/* Delete Modal */}
       {showDeleteModal && (
         <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[var(--z-modal-backdrop)] animate-fadeIn"
           onClick={() => !isDeleting && setShowDeleteModal(false)}
         >
           <div
-            style={{
-              background: "white",
-              borderRadius: 12,
-              padding: 24,
-              maxWidth: 400,
-              width: "90%",
-            }}
+            className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-lg shadow-[var(--shadow-xl)] w-full max-w-md mx-4 animate-slideUp"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ margin: "0 0 16px", fontSize: 20, fontWeight: 600 }}>
-              Delete Document
-            </h2>
-            <p style={{ margin: "0 0 16px", color: "#6b7280", fontSize: 14 }}>
-              Are you sure you want to delete "{documentTitle}"? This action
-              cannot be undone.
-            </p>
-            <div
-              style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}
-            >
+            <div className="p-4 border-b border-[var(--color-border)]">
+              <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
+                Delete Document
+              </h2>
+            </div>
+            <div className="p-4">
+              <p className="text-base text-[var(--color-text-secondary)] mb-2">
+                Are you sure you want to delete this document?
+              </p>
+              <p className="text-xs text-[var(--color-text-tertiary)]">
+                This action cannot be undone.
+              </p>
+            </div>
+            <div className="p-4 border-t border-[var(--color-border)] flex items-center justify-end gap-2">
               <button
                 onClick={() => setShowDeleteModal(false)}
                 disabled={isDeleting}
-                style={{
-                  padding: "8px 16px",
-                  background: "#f3f4f6",
-                  color: "#374151",
-                  border: "none",
-                  borderRadius: 6,
-                  cursor: isDeleting ? "not-allowed" : "pointer",
-                  fontSize: 14,
-                  fontWeight: 500,
-                }}
+                className="btn btn-ghost"
+                type="button"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDeleteDocument}
                 disabled={isDeleting}
-                style={{
-                  padding: "8px 16px",
-                  background: "#ef4444",
-                  color: "white",
-                  border: "none",
-                  borderRadius: 6,
-                  cursor: isDeleting ? "not-allowed" : "pointer",
-                  fontSize: 14,
-                  fontWeight: 500,
-                  opacity: isDeleting ? 0.5 : 1,
-                }}
+                className="btn btn-primary bg-[var(--color-error)] hover:bg-[var(--color-error)]/90"
+                type="button"
               >
                 {isDeleting ? "Deleting..." : "Delete"}
               </button>
@@ -1670,41 +1548,29 @@ export default function DocPage() {
       {/* Invite Modal */}
       {showInviteModal && (
         <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[var(--z-modal-backdrop)] animate-fadeIn"
           onClick={() => setShowInviteModal(false)}
         >
           <div
-            style={{
-              background: "white",
-              borderRadius: 12,
-              padding: 24,
-              maxWidth: 500,
-              width: "90%",
-            }}
+            className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-lg shadow-[var(--shadow-xl)] w-full max-w-md mx-4 animate-slideUp"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ margin: "0 0 16px", fontSize: 20, fontWeight: 600 }}>
-              Invite Collaborator
-            </h2>
-            <InviteForm
-              documentId={docId!}
-              onClose={() => setShowInviteModal(false)}
-            />
+            <div className="p-4 border-b border-[var(--color-border)]">
+              <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
+                Share Document
+              </h2>
+            </div>
+            <div className="p-4">
+              <InviteForm
+                resourceId={docId!}
+                resourceType="document"
+                onClose={() => setShowInviteModal(false)}
+              />
+            </div>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 
   //
@@ -1728,9 +1594,5 @@ export default function DocPage() {
   }
 
   // Default: render the main editor UI
-  return (
-    <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
-      {mainEditorUI}
-    </div>
-  );
+  return mainEditorUI;
 }

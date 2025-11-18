@@ -70,7 +70,7 @@ export const PageBlock = Node.create<PageBlockOptions>({
           contenteditable: "false",
           class: "page-block-link",
           style:
-            "display:block;text-decoration:none;color:inherit;padding:8px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;",
+            "display:block;text-decoration:none;color:inherit;padding:8px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-bg-primary);",
         },
         [
           "div",

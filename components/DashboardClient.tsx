@@ -77,184 +77,112 @@ export default function DashboardClient({
     }
   };
 
+  const formatDate = (date: string) => {
+    const d = new Date(date);
+    const now = new Date();
+    const diff = now.getTime() - d.getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+    if (days === 0) return "Today";
+    if (days === 1) return "Yesterday";
+    if (days < 7) return `${days} days ago`;
+
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+    });
+  };
+
   return (
     <>
-      <section style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
-          Your Workspaces
-        </h2>
-        {memberships.length === 0 ? (
-          <div style={{ color: "#666" }}>
-            You don&apos;t have any workspaces yet.
+      <div className="space-y-3">
+        {recentDocuments.map((doc: any, index: number) => (
+          <div
+            key={doc.id}
+            className="group card flex items-center justify-between hover:shadow-[var(--shadow-lg)] transition-all hover:-translate-y-0.5 animate-slideInLeft"
+            style={{ animationDelay: `${index * 50}ms` }}
+          >
+            <Link
+              href={`/workspace/${doc.workspaceId}/documents/${doc.id}`}
+              className="flex items-center gap-4 flex-1 min-w-0 py-1"
+            >
+              <div className="flex-shrink-0 text-2xl">📄</div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-base text-[var(--color-text-primary)] truncate">
+                  {doc.title || "Untitled"}
+                </div>
+                <div className="text-sm text-[var(--color-text-secondary)] mt-1">
+                  Edited {formatDate(doc.updatedAt)}
+                </div>
+              </div>
+            </Link>
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDeleteModal({
+                  type: "document",
+                  id: doc.id,
+                  name: doc.title || "Untitled",
+                });
+              }}
+              className="opacity-0 group-hover:opacity-100 transition-all p-3 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-secondary)] hover:text-[var(--color-error)] hover:scale-110"
+              aria-label="Delete document"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M2 4h12" />
+                <path d="M5.5 4V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1" />
+                <path d="M6.5 7.5v4" />
+                <path d="M9.5 7.5v4" />
+                <path d="M3.5 4v9a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V4" />
+              </svg>
+            </button>
           </div>
-        ) : (
-          <ul
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-              gap: 12,
-            }}
-          >
-            {memberships.map((m: any) => (
-              <li
-                key={m.id}
-                style={{
-                  border: "1px solid #eee",
-                  padding: 12,
-                  borderRadius: 8,
-                  position: "relative",
-                }}
-              >
-                <div style={{ fontWeight: 600, marginBottom: 8 }}>
-                  {m.workspace.name}
-                </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <Link href={`/workspace/${m.workspace.id}`}>
-                    <span style={{ color: "#2563eb", fontSize: 14 }}>Open</span>
-                  </Link>
-                  {m.workspace.ownerId === userId && (
-                    <button
-                      onClick={() =>
-                        setDeleteModal({
-                          type: "workspace",
-                          id: m.workspace.id,
-                          name: m.workspace.name,
-                        })
-                      }
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        color: "#ef4444",
-                        cursor: "pointer",
-                        fontSize: 14,
-                        padding: 0,
-                      }}
-                    >
-                      Delete
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        ))}
+      </div>
 
-      <section style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
-          Recent Documents
-        </h2>
-        {recentDocuments.length === 0 ? (
-          <div style={{ color: "#666" }}>No recent documents.</div>
-        ) : (
-          <ul
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-              gap: 12,
-            }}
-          >
-            {recentDocuments.map((d: any) => (
-              <li
-                key={d.id}
-                style={{
-                  border: "1px solid #eee",
-                  padding: 12,
-                  borderRadius: 8,
-                }}
-              >
-                <div style={{ fontWeight: 600, marginBottom: 6 }}>
-                  {d.title || "Untitled"}
-                </div>
-                <div style={{ color: "#666", fontSize: 12, marginBottom: 8 }}>
-                  Updated{" "}
-                  {new Date(d.updatedAt)
-                    .toISOString()
-                    .replace("T", " ")
-                    .substring(0, 19)}
-                </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <Link href={`/workspace/${d.workspaceId}/documents/${d.id}`}>
-                    <span style={{ color: "#2563eb", fontSize: 14 }}>Open</span>
-                  </Link>
-                  <button
-                    onClick={() =>
-                      setDeleteModal({
-                        type: "document",
-                        id: d.id,
-                        name: d.title || "Untitled",
-                      })
-                    }
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      color: "#ef4444",
-                      cursor: "pointer",
-                      fontSize: 14,
-                      padding: 0,
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
+      {/* Delete Confirmation Modal */}
       {deleteModal && (
         <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[var(--z-modal-backdrop)] animate-fadeIn"
           onClick={() => !isDeleting && setDeleteModal(null)}
         >
           <div
-            style={{
-              background: "white",
-              borderRadius: 12,
-              padding: 24,
-              maxWidth: 400,
-              width: "90%",
-            }}
+            className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl shadow-[var(--shadow-xl)] w-full max-w-lg mx-4 animate-scaleIn"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ margin: "0 0 16px", fontSize: 20, fontWeight: 600 }}>
-              Delete{" "}
-              {deleteModal.type === "workspace" ? "Workspace" : "Document"}
-            </h2>
-            <p style={{ margin: "0 0 16px", color: "#6b7280", fontSize: 14 }}>
-              Are you sure you want to delete &quot;{deleteModal.name}&quot;?
-              This action cannot be undone.
-              {deleteModal.type === "workspace" &&
-                " All documents in this workspace will also be deleted."}
-            </p>
-            <div
-              style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}
-            >
+            <div className="p-6 border-b border-[var(--color-border)]">
+              <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
+                Delete{" "}
+                {deleteModal.type === "workspace" ? "Workspace" : "Document"}
+              </h2>
+            </div>
+            <div className="p-6">
+              <p className="text-base text-[var(--color-text-secondary)] mb-3">
+                Are you sure you want to delete "{deleteModal.name}"?
+              </p>
+              <p className="text-sm text-[var(--color-text-tertiary)]">
+                This action cannot be undone.
+                {deleteModal.type === "workspace" &&
+                  " All documents in this workspace will also be deleted."}
+              </p>
+            </div>
+            <div className="p-6 border-t border-[var(--color-border)] flex items-center justify-end gap-3">
               <button
                 onClick={() => setDeleteModal(null)}
                 disabled={isDeleting}
-                style={{
-                  padding: "8px 16px",
-                  background: "#f3f4f6",
-                  color: "#374151",
-                  border: "none",
-                  borderRadius: 6,
-                  cursor: isDeleting ? "not-allowed" : "pointer",
-                  fontSize: 14,
-                  fontWeight: 500,
-                }}
+                className="btn btn-ghost px-6 py-3 text-base"
+                type="button"
               >
                 Cancel
               </button>
@@ -265,17 +193,8 @@ export default function DashboardClient({
                     : handleDeleteDocument
                 }
                 disabled={isDeleting}
-                style={{
-                  padding: "8px 16px",
-                  background: "#ef4444",
-                  color: "white",
-                  border: "none",
-                  borderRadius: 6,
-                  cursor: isDeleting ? "not-allowed" : "pointer",
-                  fontSize: 14,
-                  fontWeight: 500,
-                  opacity: isDeleting ? 0.5 : 1,
-                }}
+                className="btn btn-primary bg-[var(--color-error)] hover:bg-[var(--color-error)]/90 px-6 py-3 text-base"
+                type="button"
               >
                 {isDeleting ? "Deleting..." : "Delete"}
               </button>

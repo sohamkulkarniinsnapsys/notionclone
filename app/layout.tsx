@@ -1,20 +1,10 @@
-// apps/frontend/app/layout.tsx
 import "./globals.css";
 import "tippy.js/dist/tippy.css";
 import React from "react";
 import SessionProvider from "@/components/SessionProvider";
 import Header from "@/components/Header";
 import PerformanceMonitor from "@/components/PerformanceMonitor";
-import { Inter } from "next/font/google";
 import type { Metadata, Viewport } from "next";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-  preload: true,
-  adjustFontFallback: true,
-});
 
 export const metadata: Metadata = {
   title: {
@@ -76,8 +66,9 @@ export const viewport: Viewport = {
   userScalable: true,
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+    { media: "(prefers-color-scheme: dark)", color: "#191919" },
   ],
+  colorScheme: "dark",
 };
 
 export default function RootLayout({
@@ -86,7 +77,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
+    <html lang="en" data-theme="dark" suppressHydrationWarning>
       <head>
         {/* DNS Prefetch for external resources */}
         <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
@@ -112,26 +103,43 @@ export default function RootLayout({
           name="apple-mobile-web-app-status-bar-style"
           content="black-translucent"
         />
+
+        {/* Inline script to set theme immediately - prevents flash */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  document.documentElement.setAttribute('data-theme', 'dark');
+                  document.documentElement.style.backgroundColor = '#191919';
+                  document.documentElement.style.colorScheme = 'dark';
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
       </head>
-      <body className={inter.className} suppressHydrationWarning>
+      <body
+        suppressHydrationWarning
+        style={{
+          backgroundColor: "#191919",
+          color: "rgba(255, 255, 255, 0.9)",
+        }}
+      >
         <PerformanceMonitor />
         <SessionProvider>
-          <div
-            className="flex min-h-screen flex-col"
-            style={{
-              containIntrinsicSize: "auto 100vh",
-              contentVisibility: "auto",
-            }}
-          >
+          <div className="flex flex-col h-screen overflow-hidden">
             <Header />
-            <main
-              className="flex flex-1"
-              id="main-content"
-              role="main"
-              aria-label="Main content"
-            >
-              {children}
-            </main>
+            <div className="flex flex-1 overflow-hidden">
+              <main
+                className="flex-1 overflow-y-auto"
+                id="main-content"
+                role="main"
+                aria-label="Main content"
+              >
+                {children}
+              </main>
+            </div>
           </div>
         </SessionProvider>
 
