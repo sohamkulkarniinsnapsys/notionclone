@@ -11,9 +11,10 @@ declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     pageBlock: {
       insertPageBlock: (attrs: {
-        docId: string;
+        docId?: string | null;
         title?: string;
-        workspaceId?: string;
+        workspaceId?: string | null;
+        parentId?: string | null;
       }) => ReturnType;
     };
   }
@@ -30,18 +31,25 @@ export const PageBlock = Node.create<PageBlockOptions>({
     return {
       docId: {
         default: null,
-        parseHTML: (el) => el.getAttribute("data-doc-id"),
-        renderHTML: (attrs) => ({ "data-doc-id": attrs.docId }),
+        parseHTML: (el: Element) => el.getAttribute("data-doc-id"),
+        renderHTML: (attrs: any) => ({ "data-doc-id": attrs.docId }),
       },
       title: {
         default: "Untitled",
-        parseHTML: (el) => el.getAttribute("data-title") || "Untitled",
-        renderHTML: (attrs) => ({ "data-title": attrs.title }),
+        parseHTML: (el: Element) =>
+          el.getAttribute("data-title") || "Untitled",
+        renderHTML: (attrs: any) => ({ "data-title": attrs.title }),
       },
       workspaceId: {
         default: null,
-        parseHTML: (el) => el.getAttribute("data-workspace-id"),
-        renderHTML: (attrs) => ({ "data-workspace-id": attrs.workspaceId }),
+        parseHTML: (el: Element) => el.getAttribute("data-workspace-id"),
+        renderHTML: (attrs: any) => ({ "data-workspace-id": attrs.workspaceId }),
+      },
+      // NEW: persist parentId so nested pages keep the relationship
+      parentId: {
+        default: null,
+        parseHTML: (el: Element) => el.getAttribute("data-parent-id"),
+        renderHTML: (attrs: any) => ({ "data-parent-id": attrs.parentId }),
       },
     };
   },

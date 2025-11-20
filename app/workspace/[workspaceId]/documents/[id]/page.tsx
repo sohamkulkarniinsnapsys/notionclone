@@ -11,8 +11,8 @@ import TiptapEditor from "@/components/TiptapEditor";
 import PresenceBar from "@/components/PresenceBar";
 import InviteForm from "@/components/InviteForm";
 import Breadcrumb from "@/components/breadcrumbs/Breadcrumb";
-import { DocumentWithBreadcrumb } from "@/lib/services/documentService";
-import { BreadcrumbItem } from "@/lib/types";
+// removed the previous external BreadcrumbItem import to avoid type mismatch
+// import { BreadcrumbItem } from "@/lib/types";
 
 // Types
 type Params = {
@@ -26,6 +26,13 @@ type ConnectionStatus =
   | "connected"
   | "disconnected"
   | "error";
+
+// Local breadcrumb item type used by this component
+type Crumb = {
+  id: string;
+  title: string;
+  href?: string;
+};
 
 // Deterministic color generation from userId
 function getColorForUserId(userId: string): string {
@@ -75,24 +82,39 @@ export default function DocPage() {
   const searchParams = useSearchParams();
   const isNewRouting = (searchParams?.get?.("new") ?? "") === "true";
 
+  // (insert/replace in app/workspace/[workspaceId]/documents/[id]/page.tsx)
   useEffect(() => {
     try {
-      if (workspaceId) {
-        (window as any).__CURRENT_WORKSPACE_ID = workspaceId;
-        console.debug("[DocPage] __CURRENT_WORKSPACE_ID set ->", workspaceId);
+      if (workspaceId || docId) {
+        // expose both workspace and document ids to in-page client code (slash commands, page-block insertions, etc.)
+        if (workspaceId) {
+          (window as any).__CURRENT_WORKSPACE_ID = workspaceId;
+          console.debug("[DocPage] __CURRENT_WORKSPACE_ID set ->", workspaceId);
+        }
+        if (docId) {
+          (window as any).__CURRENT_DOCUMENT_ID = docId;
+          console.debug("[DocPage] __CURRENT_DOCUMENT_ID set ->", docId);
+        }
+
         return () => {
           try {
-            delete (window as any).__CURRENT_WORKSPACE_ID;
-            console.debug("[DocPage] __CURRENT_WORKSPACE_ID removed");
+            if (workspaceId) {
+              delete (window as any).__CURRENT_WORKSPACE_ID;
+              console.debug("[DocPage] __CURRENT_WORKSPACE_ID removed");
+            }
+            if (docId) {
+              delete (window as any).__CURRENT_DOCUMENT_ID;
+              console.debug("[DocPage] __CURRENT_DOCUMENT_ID removed");
+            }
           } catch (e) {
             /* ignore cleanup errors */
           }
         };
       }
     } catch (e) {
-      console.warn("[DocPage] Failed to set global workspace id", e);
+      console.warn("[DocPage] Failed to set global workspace/doc id", e);
     }
-  }, [workspaceId]);
+  }, [workspaceId, docId]); // <- ensure effect runs when docId changes
 
   // Get authenticated session for user info
   const { data: session, status: sessionStatus } = useSession();
@@ -105,16 +127,13 @@ export default function DocPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [breadcrumbItems, setBreadcrumbItems] = useState<
-  { id: string; title: string }[] | null
->(null);
-
+  // breadcrumb items now use local Crumb type
+  const [breadcrumbItems, setBreadcrumbItems] = useState<Crumb[] | null>(null);
 
   // Save button enabled state
   const [isSaving, setIsSaving] = useState(false);
 
   // User info derived from session - deterministic colors
-  // Use useMemo to prevent user object from changing on every render
   const user = useMemo(() => {
     if (sessionStatus === "loading") return null;
 
@@ -162,73 +181,75 @@ export default function DocPage() {
 
   // Fetch document metadata (separate endpoint)
   useEffect(() => {
-  if (!docId) return;
+    if (!docId) return;
 
-  const fetchDocumentMeta = async () => {
-    setIsLoadingDoc(true);
-    try {
-      // IMPORTANT: fetch the main endpoint that returns breadcrumb
-      const res = await fetch(`/api/documents/${encodeURIComponent(docId)}`);
+    const fetchDocumentMeta = async () => {
+      setIsLoadingDoc(true);
+      try {
+        // IMPORTANT: fetch the main endpoint that returns breadcrumb
+        const res = await fetch(`/api/documents/${encodeURIComponent(docId)}`);
 
-      if (res.ok) {
-        const data = await res.json();
+        if (res.ok) {
+          const data = await res.json();
 
-        // ------- TITLE -------
-        const title = data?.document?.title ?? "";
-        setDocumentTitle(title);
-        setTitleInput(title);
-        console.log("[META] Document metadata loaded:", { title });
+          // ------- TITLE -------
+          const title = data?.document?.title ?? "";
+          setDocumentTitle(title);
+          setTitleInput(title);
+          console.log("[META] Document metadata loaded:", { title });
 
-        // ------- BREADCRUMB -------
-        if (Array.isArray(data?.breadcrumb) && data.breadcrumb.length > 0) {
-          // explicitly type the 'b' parameter so TS isn't implicit any
-          const items: BreadcrumbItem[] = data.breadcrumb.map((b: { id: string; title?: string; href?: string }) => ({
-            id: b.id,
-            title: b.title ?? "Untitled",
-            href: b.href ?? undefined,
-          }));
-          setBreadcrumbItems(items);
-        } else if (data?.document?.workspaceId) {
-          const workspaceName = data.document.workspaceName ?? "Workspace";
-          const fallback: BreadcrumbItem[] = [
-            {
-              id: data.document.workspaceId,
-              title: workspaceName,
-              href: `/workspace/${data.document.workspaceId}`,
-            },
-            {
-              id: data.document.id,
-              title: title || "Untitled",
-              href: `/workspace/${data.document.workspaceId}/documents/${data.document.id}`,
-            },
-          ];
-          setBreadcrumbItems(fallback);
+          // ------- BREADCRUMB -------
+          if (Array.isArray(data?.breadcrumb) && data.breadcrumb.length > 0) {
+            // map server breadcrumb into our local Crumb[] type
+            const items: Crumb[] = data.breadcrumb.map(
+              (b: { id: string; title?: string; href?: string }) => ({
+                id: b.id,
+                title: b.title ?? "Untitled",
+                href: b.href ?? undefined,
+              }),
+            );
+            setBreadcrumbItems(items);
+          } else if (data?.document?.workspaceId) {
+            // fallback: build workspace -> current doc breadcrumb
+            const workspaceName = data.document.workspaceName ?? "Workspace";
+            const fallback: Crumb[] = [
+              {
+                id: data.document.workspaceId,
+                title: workspaceName,
+                href: `/workspace/${data.document.workspaceId}`,
+              },
+              {
+                id: data.document.id,
+                title: title || "Untitled",
+                href: `/workspace/${data.document.workspaceId}/documents/${data.document.id}`,
+              },
+            ];
+            setBreadcrumbItems(fallback);
+          } else {
+            setBreadcrumbItems([]);
+          }
+
+          // ------- TITLE EDITING MODE -------
+          if (isNewRouting || !title || title.trim() === "") {
+            setIsEditingTitle(true);
+          }
         } else {
-          setBreadcrumbItems([]);
+          let errMsg = `Failed to fetch document (status ${res.status})`;
+          try {
+            const errData = await res.json();
+            if (errData?.error) errMsg += `: ${errData.error}`;
+          } catch {}
+          console.warn(errMsg);
         }
-
-        // ------- TITLE EDITING MODE -------
-        if (isNewRouting || !title || title.trim() === "") {
-          setIsEditingTitle(true);
-        }
-      } else {
-        let errMsg = `Failed to fetch document (status ${res.status})`;
-        try {
-          const errData = await res.json();
-          if (errData?.error) errMsg += `: ${errData.error}`;
-        } catch {}
-        console.warn(errMsg);
+      } catch (error) {
+        console.error("Error fetching document metadata:", error);
+      } finally {
+        setIsLoadingDoc(false);
       }
-    } catch (error) {
-      console.error("Error fetching document metadata:", error);
-    } finally {
-      setIsLoadingDoc(false);
-    }
-  };
+    };
 
-  fetchDocumentMeta();
-}, [docId, isNewRouting]);
-
+    fetchDocumentMeta();
+  }, [docId, isNewRouting]);
 
   // Handle title edit
   const handleTitleSave = async () => {
@@ -333,7 +354,7 @@ export default function DocPage() {
         // Redirect to workspace
         router.push(`/workspace/${workspaceId}/documents`);
       } else {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         alert(data.error || "Failed to delete document");
         setIsDeleting(false);
         setShowDeleteModal(false);
@@ -364,15 +385,17 @@ export default function DocPage() {
         }),
       });
 
+      // parse body even on non-ok to get error info
+      const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        console.error("[createChildPage] failed", res.status, err);
-        alert(err?.error || "Failed to create page");
+        console.error("[createChildPage] failed", res.status, data);
+        alert(data?.error || "Failed to create page");
         return null;
       }
 
-      const data = await res.json();
-      const newId = data?.id;
+      // server returns { ok: true, document }
+      const newId = data?.document?.id ?? data?.id ?? null;
       if (!newId) {
         console.warn("[createChildPage] no id in response", data);
         return null;
@@ -387,7 +410,6 @@ export default function DocPage() {
       return null;
     }
   };
-
 
   // refs to hold ydoc/provider for lifecycle
   const ydocRef = useRef<Y.Doc | null>(null);
@@ -461,9 +483,9 @@ export default function DocPage() {
 
     // Save debounce state
     let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-    const SAVE_DEBOUNCE_MS = 30000; // 30 seconds to reduce server load and improve performance
+    const SAVE_DEBOUNCE_MS = 3000; // 3 seconds to reduce server load and improve performance
     let lastSaveTime = 0; // Track last save to prevent excessive saves
-    const MIN_SAVE_INTERVAL = 2000; // Minimum 2 seconds between saves</parameter>
+    const MIN_SAVE_INTERVAL = 2000; // Minimum 2 seconds between saves
 
     const cleanup = () => {
       if (cleanupCalled) return;

@@ -74,6 +74,11 @@ export function getSlashCommands(): CommandItem[] {
       aliases: ["page", "link page", "subpage"],
       command: async (editor) => {
         try {
+          // Prefer global signals if available (set in the page component)
+          const workspaceFromWindow = (window as any).__CURRENT_WORKSPACE_ID ?? null;
+          const parentFromWindow = (window as any).__CURRENT_DOCUMENT_ID ?? null;
+
+          // Fallback to guessing from path if globals not set
           const guessWorkspace = (() => {
             try {
               const m = window.location.pathname.match(/\/workspace\/([^/]+)/);
@@ -83,7 +88,8 @@ export function getSlashCommands(): CommandItem[] {
             }
           })();
 
-          const workspaceId = guessWorkspace || "personal";
+          const workspaceId = workspaceFromWindow || guessWorkspace || "personal";
+          const parentId = parentFromWindow ?? null; // null means top-level
 
           const res = await fetch("/api/documents", {
             method: "POST",
@@ -91,13 +97,14 @@ export function getSlashCommands(): CommandItem[] {
             body: JSON.stringify({
               workspaceId,
               title: "Untitled",
+              parentId, // <- IMPORTANT: include parentId so DB gets linked
             }),
           });
 
           if (!res.ok) {
             const text = await res.text().catch(() => "");
             console.error(
-              "Failed to create document for page block:",
+              "Failed to create document for page block: ",
               res.status,
               text,
             );
@@ -120,7 +127,7 @@ export function getSlashCommands(): CommandItem[] {
             .insertPageBlock({
               docId: doc.id,
               title: doc.title || "Untitled",
-              workspaceId: workspaceId,
+              workspaceId: doc.workspaceId || workspaceId,
             })
             .run();
         } catch (err) {

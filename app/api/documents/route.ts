@@ -12,17 +12,14 @@ export async function GET(req: Request) {
   try {
     const session = await getSession();
     if (!session?.user) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
     }
 
     const { searchParams } = new URL(req.url);
     const workspaceId = searchParams.get("workspaceId");
 
     if (!workspaceId) {
-      return NextResponse.json(
-        { error: "missing_workspace_id" },
-        { status: 400 },
-      );
+      return NextResponse.json({ ok: false, error: "missing_workspace_id" }, { status: 400 });
     }
 
     // Check if user has access to this workspace
@@ -34,7 +31,7 @@ export async function GET(req: Request) {
     });
 
     if (!membership) {
-      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
     }
 
     // Get all documents in the workspace
@@ -51,10 +48,10 @@ export async function GET(req: Request) {
       orderBy: { updatedAt: "desc" },
     });
 
-    return NextResponse.json({ documents });
+    return NextResponse.json({ ok: true, documents });
   } catch (err) {
     console.error("GET /api/documents error", err);
-    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "internal_error" }, { status: 500 });
   }
 }
 
@@ -66,17 +63,19 @@ export async function POST(req: Request) {
   try {
     const session = await getSession();
     if (!session?.user) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
     }
 
     const body = await req.json();
-    const { workspaceId, title, parentId } = body;
+    const {
+      workspaceId,
+      title = "Untitled",
+      parentId = null,
+      contentJson = null,
+    } = body ?? {};
 
-    if (!workspaceId || !title) {
-      return NextResponse.json(
-        { error: "missing_required_fields" },
-        { status: 400 },
-      );
+    if (!workspaceId) {
+      return NextResponse.json({ ok: false, error: "missing_workspace_id" }, { status: 400 });
     }
 
     // Check if user has access to this workspace
@@ -88,7 +87,7 @@ export async function POST(req: Request) {
     });
 
     if (!membership) {
-      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
     }
 
     // If parentId provided, ensure parent exists and belongs to same workspace
@@ -99,29 +98,24 @@ export async function POST(req: Request) {
       });
 
       if (!parent) {
-        return NextResponse.json(
-          { error: "invalid_parentId" },
-          { status: 400 },
-        );
+        return NextResponse.json({ ok: false, error: "invalid_parentId" }, { status: 400 });
       }
 
       if (parent.workspaceId !== workspaceId) {
-        return NextResponse.json(
-          { error: "parent_workspace_mismatch" },
-          { status: 400 },
-        );
+        return NextResponse.json({ ok: false, error: "parent_workspace_mismatch" }, { status: 400 });
       }
     }
 
-    // Create the document using service helper (keeps logic centralized)
+    // Create the document using centralized service (validates and persists)
     const document = await serviceCreateDocument(session.user.id, workspaceId, {
       title,
       parentId: parentId ?? null,
+      contentJson,
     });
 
-    return NextResponse.json({ document }, { status: 201 });
+    return NextResponse.json({ ok: true, document }, { status: 201 });
   } catch (err) {
     console.error("POST /api/documents error", err);
-    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "internal_error" }, { status: 500 });
   }
 }

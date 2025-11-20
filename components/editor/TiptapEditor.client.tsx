@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import React, { useEffect } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -46,15 +46,30 @@ export default function TiptapEditor({ docId, initialContent }: Props) {
       try {
         const json = editor.getJSON();
         const html = editor.getHTML();
-        await fetch(`/api/docs/${encodeURIComponent(docId)}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contentJson: json,
-            contentHtml: html,
-          }),
-        });
-        console.log("[TiptapEditor] Auto-saved");
+
+        // NOTE: Use the canonical documents endpoint for saving content.
+        // server route file exists at app/api/documents/[id]/save/route.ts
+        const res = await fetch(
+          `/api/documents/${encodeURIComponent(docId)}/save`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contentJson: json,
+              contentHtml: html,
+            }),
+          },
+        );
+
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
+          console.warn(
+            `[TiptapEditor] autosave returned non-ok (${res.status}):`,
+            body,
+          );
+        } else {
+          console.log("[TiptapEditor] Auto-saved");
+        }
       } catch (err) {
         console.warn("[TiptapEditor] Autosave failed", err);
       }
