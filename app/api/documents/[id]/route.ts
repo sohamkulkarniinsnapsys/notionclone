@@ -82,15 +82,17 @@ export async function GET(req: Request, context: ContextWithParams) {
 
     // Return document with breadcrumb and permissions
     return NextResponse.json({
+      ok: true,
       document: {
         id: documentData.id,
         title: documentData.title,
         workspaceId: documentData.workspaceId,
+        workspaceName: documentData.breadcrumb?.[0]?.title ?? null,
         ownerId: documentData.ownerId,
         createdAt: documentData.createdAt.toISOString(),
         updatedAt: documentData.updatedAt.toISOString(),
       },
-      breadcrumb: documentData.breadcrumb,
+      breadcrumb: documentData.breadcrumb ?? [],
       permissions: {
         canView: documentData.permissions.canView,
         canEdit: documentData.permissions.canEdit,

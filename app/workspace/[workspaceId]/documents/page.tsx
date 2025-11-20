@@ -103,8 +103,7 @@ export default async function DocumentsListPage({ params }: Props) {
   return (
     <AppSidebar>
     <div className="flex h-full">
-      {/* Sidebar */}
-       
+      
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-5xl mx-auto p-8">

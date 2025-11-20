@@ -11,6 +11,8 @@ import TiptapEditor from "@/components/TiptapEditor";
 import PresenceBar from "@/components/PresenceBar";
 import InviteForm from "@/components/InviteForm";
 import Breadcrumb from "@/components/breadcrumbs/Breadcrumb";
+import { DocumentWithBreadcrumb } from "@/lib/services/documentService";
+import { BreadcrumbItem } from "@/lib/types";
 
 // Types
 type Params = {
@@ -178,22 +180,31 @@ export default function DocPage() {
         console.log("[META] Document metadata loaded:", { title });
 
         // ------- BREADCRUMB -------
-        if (Array.isArray(data?.breadcrumb)) {
-          // normalize format {id,title}
-          setBreadcrumbItems(
-            data.breadcrumb.map((b: any) => ({
-              id: b.id,
-              title: b.title ?? "Untitled",
-            }))
-          );
+        if (Array.isArray(data?.breadcrumb) && data.breadcrumb.length > 0) {
+          // explicitly type the 'b' parameter so TS isn't implicit any
+          const items: BreadcrumbItem[] = data.breadcrumb.map((b: { id: string; title?: string; href?: string }) => ({
+            id: b.id,
+            title: b.title ?? "Untitled",
+            href: b.href ?? undefined,
+          }));
+          setBreadcrumbItems(items);
+        } else if (data?.document?.workspaceId) {
+          const workspaceName = data.document.workspaceName ?? "Workspace";
+          const fallback: BreadcrumbItem[] = [
+            {
+              id: data.document.workspaceId,
+              title: workspaceName,
+              href: `/workspace/${data.document.workspaceId}`,
+            },
+            {
+              id: data.document.id,
+              title: title || "Untitled",
+              href: `/workspace/${data.document.workspaceId}/documents/${data.document.id}`,
+            },
+          ];
+          setBreadcrumbItems(fallback);
         } else {
-          // fallback breadcrumb: workspace + current page
-          if (data?.document?.workspaceId) {
-            setBreadcrumbItems([
-              { id: data.document.workspaceId, title: "Workspace" },
-              { id: data.document.id, title: title || "Untitled" },
-            ]);
-          }
+          setBreadcrumbItems([]);
         }
 
         // ------- TITLE EDITING MODE -------
@@ -1432,7 +1443,7 @@ export default function DocPage() {
                   <Breadcrumb
                     items={breadcrumbItems}
                     workspaceId={workspaceId ?? ""}
-                    maxLength={28}
+                    maxVisible={28}
                     onNavigate={(pageId: string) => {
                       if (!workspaceId) return;
                       router.push(`/workspace/${workspaceId}/documents/${pageId}`);

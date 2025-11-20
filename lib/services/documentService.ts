@@ -5,12 +5,11 @@
 
 import prisma from "@/lib/prisma";
 import { checkDocumentPermission, PermissionResult } from "./permissions";
+import type { BreadcrumbItem } from "@/lib/types";
 
-export interface BreadcrumbItem {
-  id: string;
-  title: string;
-}
-
+/**
+ * DocumentWithBreadcrumb - the shape returned by getDocumentWithBreadcrumb
+ */
 export interface DocumentWithBreadcrumb {
   id: string;
   title: string;
@@ -68,7 +67,7 @@ export async function getDocumentWithBreadcrumb(
   userId: string,
 ): Promise<DocumentWithBreadcrumb | null> {
   try {
-    // Get document
+    // Get document (with workspace info)
     const document = await prisma.document.findUnique({
       where: { id: documentId },
       select: {
@@ -98,7 +97,7 @@ export async function getDocumentWithBreadcrumb(
       return null;
     }
 
-    // Generate breadcrumb trail
+    // Generate breadcrumb trail (includes workspace item at index 0)
     const breadcrumb = await generateBreadcrumb(
       documentId,
       document.workspaceId,
@@ -106,7 +105,7 @@ export async function getDocumentWithBreadcrumb(
 
     return {
       id: document.id,
-      title: document.title,
+      title: document.title ?? "Untitled",
       workspaceId: document.workspaceId,
       ownerId: document.ownerId,
       createdAt: document.createdAt,
@@ -123,6 +122,8 @@ export async function getDocumentWithBreadcrumb(
 /**
  * Generate breadcrumb trail for a document
  * Traces parent pages to build the path
+ *
+ * Returned order: [ workspace, ancestor1, ancestor2, ..., immediateParent, currentDocument ]
  */
 async function generateBreadcrumb(
   documentId: string,
@@ -143,11 +144,12 @@ async function generateBreadcrumb(
     if (workspace) {
       breadcrumb.push({
         id: workspace.id,
-        title: workspace.name,
+        title: workspace.name ?? "Workspace",
+        href: `/workspace/${workspace.id}`,
       });
     }
 
-    // Get current document
+    // Get current document (to fetch title & parentId indirectly)
     const document = await prisma.document.findUnique({
       where: { id: documentId },
       select: {
@@ -161,21 +163,19 @@ async function generateBreadcrumb(
       return breadcrumb;
     }
 
-    // Find parent documents via explicit parentId chain
+    // Find parent documents (ordered top -> immediate parent)
     const parentDocs = await findParentDocuments(documentId, workspaceId);
 
-    // Add parent documents to breadcrumb (they are ordered top -> immediate parent)
+    // Add parent documents to breadcrumb
     for (const parent of parentDocs) {
-      breadcrumb.push({
-        id: parent.id,
-        title: parent.title,
-      });
+      breadcrumb.push(parent);
     }
 
     // Add current document
     breadcrumb.push({
       id: document.id,
-      title: document.title,
+      title: document.title ?? "Untitled",
+      href: `/workspace/${workspaceId}/documents/${document.id}`,
     });
 
     return breadcrumb;
@@ -189,13 +189,15 @@ async function generateBreadcrumb(
  * Find parent documents by walking `parentId` chain.
  * Returns an array ordered from top-most ancestor (closest to workspace root)
  * down to the immediate parent.
+ *
+ * Each returned item is a BreadcrumbItem and includes an href when workspaceId is present.
  */
 async function findParentDocuments(
   documentId: string,
   workspaceId?: string,
-): Promise<Array<{ id: string; title: string }>> {
+): Promise<BreadcrumbItem[]> {
   try {
-    const parents: Array<{ id: string; title: string }> = [];
+    const parents: BreadcrumbItem[] = [];
 
     // Get the starting doc's parentId
     let current = await prisma.document.findUnique({
@@ -212,16 +214,17 @@ async function findParentDocuments(
 
       if (!parent) break;
 
-      // Optional: ensure parent belongs to same workspace (defensive)
+      // Ensure parent belongs to same workspace (defensive)
       if (workspaceId && parent.workspaceId !== workspaceId) {
         // stop traversal if parent not in same workspace (data inconsistency)
         break;
       }
 
-      // We want ancestors in top -> bottom order. We'll unshift each found parent.
+      // Prepend to parents list to ensure top->bottom ordering
       parents.unshift({
         id: parent.id,
         title: parent.title ?? "Untitled",
+        href: workspaceId ? `/workspace/${workspaceId}/documents/${parent.id}` : undefined,
       });
 
       current = { parentId: parent.parentId };

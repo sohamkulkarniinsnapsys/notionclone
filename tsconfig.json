@@ -36,7 +36,7 @@
     "apps/ws-server/tsconfig.json",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
-  ],
+, "scripts/check-parent.cjs"  ],
   "exclude": [
     "node_modules",
     ".next"
