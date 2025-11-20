@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import AppSidebar from "@/components/sidebar/AppSidebar";
 
 type Props = {
   params: Promise<{ workspaceId: string }>;
@@ -100,43 +101,10 @@ export default async function DocumentsListPage({ params }: Props) {
   };
 
   return (
+    <AppSidebar>
     <div className="flex h-full">
       {/* Sidebar */}
-      <aside className="hidden md:flex w-60 border-r border-[var(--color-border)] bg-[var(--color-bg-secondary)] flex-col">
-        <div className="p-4 border-b border-[var(--color-border)]">
-          <h2 className="text-xs font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide mb-3">
-            Quick Actions
-          </h2>
-          <form action={createDocument}>
-            <button type="submit" className="btn btn-primary w-full text-sm">
-              + New Document
-            </button>
-          </form>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4">
-          <h3 className="text-xs font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide mb-2">
-            Navigation
-          </h3>
-          <div className="space-y-1">
-            <Link
-              href="/dashboard"
-              className="flex items-center gap-2 px-2 py-1.5 rounded text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
-            >
-              <span>🏠</span>
-              <span>Home</span>
-            </Link>
-            <Link
-              href={`/workspace/${workspaceId}`}
-              className="flex items-center gap-2 px-2 py-1.5 rounded text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
-            >
-              <span>📁</span>
-              <span>Workspace</span>
-            </Link>
-          </div>
-        </div>
-      </aside>
-
+       
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-5xl mx-auto p-8">
@@ -239,5 +207,6 @@ export default async function DocumentsListPage({ params }: Props) {
         </div>
       </main>
     </div>
+    </AppSidebar>
   );
 }

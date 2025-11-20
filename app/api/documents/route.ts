@@ -2,13 +2,12 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { createDocument as serviceCreateDocument } from "@/lib/services/documentService";
 
 /**
  * GET /api/documents?workspaceId=xxx
  * List all documents in a workspace that the user has access to
  */
-
-
 export async function GET(req: Request) {
   try {
     const session = await getSession();
@@ -18,7 +17,6 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const workspaceId = searchParams.get("workspaceId");
-
 
     if (!workspaceId) {
       return NextResponse.json(
@@ -48,6 +46,7 @@ export async function GET(req: Request) {
         createdAt: true,
         updatedAt: true,
         createdBy: true,
+        parentId: true,
       },
       orderBy: { updatedAt: "desc" },
     });
@@ -61,7 +60,7 @@ export async function GET(req: Request) {
 
 /**
  * POST /api/documents
- * Create a new document in a workspace
+ * Create a new document in a workspace (optional parentId for nested pages)
  */
 export async function POST(req: Request) {
   try {
@@ -71,7 +70,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { workspaceId, title } = body;
+    const { workspaceId, title, parentId } = body;
 
     if (!workspaceId || !title) {
       return NextResponse.json(
@@ -92,14 +91,32 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
 
-    // Create the document
-    const document = await prisma.document.create({
-      data: {
-        title,
-        workspaceId,
-        createdBy: session.user.id,
-        ownerId: session.user.id,
-      },
+    // If parentId provided, ensure parent exists and belongs to same workspace
+    if (parentId) {
+      const parent = await prisma.document.findUnique({
+        where: { id: parentId },
+        select: { id: true, workspaceId: true },
+      });
+
+      if (!parent) {
+        return NextResponse.json(
+          { error: "invalid_parentId" },
+          { status: 400 },
+        );
+      }
+
+      if (parent.workspaceId !== workspaceId) {
+        return NextResponse.json(
+          { error: "parent_workspace_mismatch" },
+          { status: 400 },
+        );
+      }
+    }
+
+    // Create the document using service helper (keeps logic centralized)
+    const document = await serviceCreateDocument(session.user.id, workspaceId, {
+      title,
+      parentId: parentId ?? null,
     });
 
     return NextResponse.json({ document }, { status: 201 });

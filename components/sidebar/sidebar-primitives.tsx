@@ -7,6 +7,17 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Menu, X } from "lucide-react";
 
+/**
+ * Sidebar primitives
+ *
+ * Key notes:
+ * - DesktopSidebar uses `h-screen` so the left column exactly matches viewport height.
+ * - SidebarBody uses `flex-1 overflow-auto min-h-0` so it scrolls internally when needed.
+ * - SidebarFooter is `sticky bottom-0` and `flex-none` so it remains visible.
+ *
+ * IMPORTANT: Mount AppSidebar only once (preferably in app/layout.tsx).
+ */
+
 // Types
 export interface SidebarLink {
   label: string;
@@ -44,7 +55,6 @@ export const SidebarProvider = ({
   animate?: boolean;
 }) => {
   const [openState, setOpenState] = useState(false);
-
   const open = openProp !== undefined ? openProp : openState;
   const setOpen = setOpenProp !== undefined ? setOpenProp : setOpenState;
 
@@ -55,20 +65,15 @@ export const SidebarProvider = ({
   );
 };
 
-// Main Sidebar Container
-export const Sidebar = ({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) => {
-  return (
-    <div className={cn("flex h-screen w-full", className)}>{children}</div>
-  );
+// Root container: full height layout (flex)
+export const Sidebar = (props: { children: React.ReactNode; className?: string }) => {
+  const { children, className } = props;
+  // Use min-h-screen on container so the app can be embedded in nested layouts;
+  // actual column uses h-screen to force viewport match.
+  return <div className={cn("flex min-h-screen w-full", className)}>{children}</div>;
 };
 
-// Desktop Sidebar
+// Desktop Sidebar: fixed-height column that matches viewport
 export const DesktopSidebar = ({
   children,
   className,
@@ -81,7 +86,8 @@ export const DesktopSidebar = ({
   return (
     <motion.div
       className={cn(
-        "hidden md:flex h-full flex-col bg-[var(--color-bg-secondary)] border-r border-[var(--color-border)]",
+        // h-screen ensures this left column is exactly viewport height and won't grow
+        "hidden md:flex h-screen flex-col bg-[var(--color-bg-secondary)] border-r border-[var(--color-border)]",
         "relative z-20",
         className,
       )}
@@ -89,7 +95,7 @@ export const DesktopSidebar = ({
         width: open ? "280px" : "72px",
       }}
       transition={{
-        duration: animate ? 0.3 : 0,
+        duration: animate ? 0.28 : 0,
         ease: [0.4, 0, 0.2, 1],
       }}
       onMouseEnter={() => setOpen(true)}
@@ -100,7 +106,7 @@ export const DesktopSidebar = ({
   );
 };
 
-// Mobile Sidebar
+// Mobile Sidebar (drawer)
 export const MobileSidebar = ({
   children,
   className,
@@ -112,30 +118,28 @@ export const MobileSidebar = ({
 
   return (
     <>
-      {/* Mobile Menu Button */}
+      {/* mobile toggle button */}
       <button
         className="md:hidden fixed top-5 left-5 z-50 p-3 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] hover:bg-[var(--color-bg-hover)] transition-colors shadow-lg"
         onClick={() => setOpen(!open)}
         aria-label="Toggle menu"
       >
-        {open ? <X size={24} /> : <Menu size={24} />}
+        {open ? <X size={20} /> : <Menu size={20} />}
       </button>
 
-      {/* Backdrop */}
       <AnimatePresence>
         {open && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.18 }}
             className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
             onClick={() => setOpen(false)}
           />
         )}
       </AnimatePresence>
 
-      {/* Drawer */}
       <AnimatePresence>
         {open && (
           <motion.div
@@ -150,7 +154,7 @@ export const MobileSidebar = ({
             className={cn(
               "md:hidden fixed left-0 top-0 h-full w-72 bg-[var(--color-bg-secondary)] border-r border-[var(--color-border)] z-50",
               "flex flex-col",
-              className,
+              className
             )}
           >
             {children}
@@ -161,7 +165,7 @@ export const MobileSidebar = ({
   );
 };
 
-// Sidebar Body
+// Sidebar Body — scrollable area inside h-screen column
 export const SidebarBody = ({
   children,
   className,
@@ -169,8 +173,9 @@ export const SidebarBody = ({
   children: React.ReactNode;
   className?: string;
 }) => {
+  // flex-1 + overflow-auto + min-h-0 so it scrolls internally when content > viewport.
   return (
-    <div className={cn("flex-1 overflow-y-auto overflow-x-hidden", className)}>
+    <div className={cn("flex-1 overflow-auto min-h-0 pb-20", className)}>
       {children}
     </div>
   );
@@ -188,15 +193,14 @@ export const SidebarLink = ({
 }) => {
   const { open, animate } = useSidebar();
   const pathname = usePathname();
-  const isActive =
-    pathname === link.href || pathname?.startsWith(link.href + "/");
+  const isActive = pathname === link.href || pathname?.startsWith(link.href + "/");
 
   return (
     <Link
       href={link.href}
       onClick={onClick}
       className={cn(
-        "flex items-center gap-4 px-4 py-3 mx-2 rounded-lg min-h-[44px]",
+        "flex items-center gap-3 px-4 py-3 mx-2 rounded-lg min-h-[44px]",
         "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]",
         "hover:bg-[var(--color-bg-hover)] transition-all duration-200",
         "group relative",
@@ -205,40 +209,19 @@ export const SidebarLink = ({
           "before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2",
           "before:w-1 before:h-10 before:bg-[var(--color-accent)] before:rounded-r-full",
         ],
-        className,
+        className
       )}
     >
-      {/* Icon */}
       <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
         {link.icon}
       </div>
 
-      {/* Label with animation */}
-      <AnimatePresence>
-        {open && (
-          <motion.span
-            initial={{ opacity: 0, width: 0 }}
-            animate={{
-              opacity: 1,
-              width: "auto",
-            }}
-            exit={{
-              opacity: 0,
-              width: 0,
-            }}
-            transition={{
-              duration: animate ? 0.2 : 0,
-              opacity: { duration: animate ? 0.2 : 0 },
-              width: { duration: animate ? 0.2 : 0 },
-            }}
-            className="text-base font-medium whitespace-nowrap overflow-hidden"
-          >
-            {link.label}
-          </motion.span>
-        )}
-      </AnimatePresence>
+      {open && (
+        <span className="text-sm font-medium whitespace-nowrap overflow-hidden">
+          {link.label}
+        </span>
+      )}
 
-      {/* Tooltip for collapsed state */}
       {!open && (
         <div className="absolute left-full ml-3 px-3 py-2 bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)] text-sm rounded-lg shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
           {link.label}
@@ -248,7 +231,7 @@ export const SidebarLink = ({
   );
 };
 
-// Sidebar Section (for grouping links)
+// Sidebar Section
 export const SidebarSection = ({
   title,
   children,
@@ -263,7 +246,7 @@ export const SidebarSection = ({
   return (
     <div className={cn("py-3", className)}>
       {title && open && (
-        <div className="px-6 py-3 text-sm font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide">
+        <div className="px-6 py-3 text-xs font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wide">
           {title}
         </div>
       )}
@@ -272,78 +255,44 @@ export const SidebarSection = ({
   );
 };
 
-// Sidebar Footer (for user info, etc.)
-export const SidebarFooter = ({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) => {
+// Sidebar Footer
+export const SidebarFooter = ({ children, className }: { children: React.ReactNode; className?: string }) => {
+  // sticky bottom-0 ensures footer sits at the bottom of the h-screen column
   return (
-    <div className={cn("border-t border-[var(--color-border)] p-4", className)}>
+    <div className={cn("border-t border-[var(--color-border)] p-4 flex-none bg-[var(--color-bg-secondary)] sticky bottom-0 z-10", className)}>
       {children}
     </div>
   );
 };
 
-// User Info Component
-export const SidebarUser = ({
-  name,
-  email,
-  avatar,
-  className,
-}: {
-  name: string;
-  email?: string;
-  avatar?: string | React.ReactNode;
-  className?: string;
-}) => {
+// Sidebar User
+export const SidebarUser = ({ name, email, avatar, className }: { name: string; email?: string; avatar?: string | React.ReactNode; className?: string }) => {
   const { open } = useSidebar();
 
   return (
     <div className={cn("flex items-center gap-3 px-4 py-3", className)}>
-      {/* Avatar */}
       <div className="flex-shrink-0 w-10 h-10 rounded-full bg-[var(--color-accent)] text-white flex items-center justify-center overflow-hidden">
         {typeof avatar === "string" ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img src={avatar} alt={name} className="w-full h-full object-cover" />
         ) : avatar ? (
           avatar
         ) : (
-          <span className="text-base font-medium">
-            {name.charAt(0).toUpperCase()}
-          </span>
+          <span className="text-base font-medium">{name.charAt(0).toUpperCase()}</span>
         )}
       </div>
 
-      {/* User Info */}
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, width: 0 }}
-            animate={{ opacity: 1, width: "auto" }}
-            exit={{ opacity: 0, width: 0 }}
-            transition={{ duration: 0.2 }}
-            className="flex-1 min-w-0 overflow-hidden"
-          >
-            <div className="text-base font-medium text-[var(--color-text-primary)] truncate">
-              {name}
-            </div>
-            {email && (
-              <div className="text-sm text-[var(--color-text-secondary)] truncate">
-                {email}
-              </div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {open && (
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <div className="text-sm font-medium text-[var(--color-text-primary)] truncate">{name}</div>
+          {email && <div className="text-xs text-[var(--color-text-secondary)] truncate">{email}</div>}
+        </div>
+      )}
     </div>
   );
 };
 
 // Divider
 export const SidebarDivider = ({ className }: { className?: string }) => {
-  return (
-    <div className={cn("h-px bg-[var(--color-border)] mx-3 my-3", className)} />
-  );
+  return <div className={cn("h-px bg-[var(--color-border)] mx-3 my-3", className)} />;
 };

@@ -10,6 +10,7 @@ import { Awareness as YAwareness } from "y-protocols/awareness";
 import TiptapEditor from "@/components/TiptapEditor";
 import PresenceBar from "@/components/PresenceBar";
 import InviteForm from "@/components/InviteForm";
+import Breadcrumb from "@/components/breadcrumbs/Breadcrumb";
 
 // Types
 type Params = {
@@ -102,6 +103,10 @@ export default function DocPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [breadcrumbItems, setBreadcrumbItems] = useState<
+  { id: string; title: string }[] | null
+>(null);
+
 
   // Save button enabled state
   const [isSaving, setIsSaving] = useState(false);
@@ -155,44 +160,64 @@ export default function DocPage() {
 
   // Fetch document metadata (separate endpoint)
   useEffect(() => {
-    if (!docId) return;
+  if (!docId) return;
 
-    const fetchDocumentMeta = async () => {
-      setIsLoadingDoc(true);
-      try {
-        const res = await fetch(
-          `/api/documents/${encodeURIComponent(docId)}/meta`,
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const title = data?.document?.title ?? "";
-          // Title may be empty string (new doc)
-          setDocumentTitle(title);
-          setTitleInput(title);
-          console.log("[META] Document metadata loaded:", { title });
+  const fetchDocumentMeta = async () => {
+    setIsLoadingDoc(true);
+    try {
+      // IMPORTANT: fetch the main endpoint that returns breadcrumb
+      const res = await fetch(`/api/documents/${encodeURIComponent(docId)}`);
 
-          // If this route was flagged as new OR title is empty, enter edit mode
-          if (isNewRouting || !title || title.trim() === "") {
-            setIsEditingTitle(true);
-            // focus will be handled by input's autoFocus prop
-          }
+      if (res.ok) {
+        const data = await res.json();
+
+        // ------- TITLE -------
+        const title = data?.document?.title ?? "";
+        setDocumentTitle(title);
+        setTitleInput(title);
+        console.log("[META] Document metadata loaded:", { title });
+
+        // ------- BREADCRUMB -------
+        if (Array.isArray(data?.breadcrumb)) {
+          // normalize format {id,title}
+          setBreadcrumbItems(
+            data.breadcrumb.map((b: any) => ({
+              id: b.id,
+              title: b.title ?? "Untitled",
+            }))
+          );
         } else {
-          let errMsg = `Failed to fetch document metadata (status ${res.status})`;
-          try {
-            const errData = await res.json();
-            if (errData?.error) errMsg += `: ${errData.error}`;
-          } catch {}
-          console.warn(errMsg);
+          // fallback breadcrumb: workspace + current page
+          if (data?.document?.workspaceId) {
+            setBreadcrumbItems([
+              { id: data.document.workspaceId, title: "Workspace" },
+              { id: data.document.id, title: title || "Untitled" },
+            ]);
+          }
         }
-      } catch (error) {
-        console.error("Error fetching document metadata:", error);
-      } finally {
-        setIsLoadingDoc(false);
-      }
-    };
 
-    fetchDocumentMeta();
-  }, [docId, isNewRouting]);
+        // ------- TITLE EDITING MODE -------
+        if (isNewRouting || !title || title.trim() === "") {
+          setIsEditingTitle(true);
+        }
+      } else {
+        let errMsg = `Failed to fetch document (status ${res.status})`;
+        try {
+          const errData = await res.json();
+          if (errData?.error) errMsg += `: ${errData.error}`;
+        } catch {}
+        console.warn(errMsg);
+      }
+    } catch (error) {
+      console.error("Error fetching document metadata:", error);
+    } finally {
+      setIsLoadingDoc(false);
+    }
+  };
+
+  fetchDocumentMeta();
+}, [docId, isNewRouting]);
+
 
   // Handle title edit
   const handleTitleSave = async () => {
@@ -310,6 +335,49 @@ export default function DocPage() {
     }
   };
 
+  // Create a new document (child of current doc)
+  const createChildPage = async (title = "Untitled") => {
+    if (!workspaceId || !docId) {
+      console.warn("[createChildPage] missing workspaceId or docId");
+      return null;
+    }
+
+    try {
+      const res = await fetch("/api/documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          workspaceId,
+          parentId: docId,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error("[createChildPage] failed", res.status, err);
+        alert(err?.error || "Failed to create page");
+        return null;
+      }
+
+      const data = await res.json();
+      const newId = data?.id;
+      if (!newId) {
+        console.warn("[createChildPage] no id in response", data);
+        return null;
+      }
+
+      // Navigate to newly created child document
+      router.push(`/workspace/${workspaceId}/documents/${newId}`);
+      return newId;
+    } catch (e) {
+      console.error("[createChildPage] error", e);
+      alert("Error creating page");
+      return null;
+    }
+  };
+
+
   // refs to hold ydoc/provider for lifecycle
   const ydocRef = useRef<Y.Doc | null>(null);
   const providerRef = useRef<WebsocketProvider | null>(null);
@@ -384,7 +452,7 @@ export default function DocPage() {
     let saveTimeout: ReturnType<typeof setTimeout> | null = null;
     const SAVE_DEBOUNCE_MS = 30000; // 30 seconds to reduce server load and improve performance
     let lastSaveTime = 0; // Track last save to prevent excessive saves
-    const MIN_SAVE_INTERVAL = 10000; // Minimum 10 seconds between saves</parameter>
+    const MIN_SAVE_INTERVAL = 2000; // Minimum 2 seconds between saves</parameter>
 
     const cleanup = () => {
       if (cleanupCalled) return;
@@ -1359,26 +1427,40 @@ export default function DocPage() {
           <div className="flex items-center justify-between gap-4">
             {/* Left: Breadcrumb & Title */}
             <div className="flex items-center gap-3 flex-1 min-w-0">
-              <Link
-                href={`/workspace/${workspaceId}/documents`}
-                className="text-base text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors flex items-center gap-1"
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M10 12L6 8l4-4" />
-                </svg>
-                Documents
-              </Link>
-              <span className="text-[var(--color-text-tertiary)]">/</span>
+              <div className="flex items-center gap-2">
+                {breadcrumbItems ? (
+                  <Breadcrumb
+                    items={breadcrumbItems}
+                    workspaceId={workspaceId ?? ""}
+                    maxLength={28}
+                    onNavigate={(pageId: string) => {
+                      if (!workspaceId) return;
+                      router.push(`/workspace/${workspaceId}/documents/${pageId}`);
+                    }}
+                    className="mr-2"
+                  />
+                ) : (
+                  <Link
+                    href={`/workspace/${workspaceId}/documents`}
+                    className="text-base text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors flex items-center gap-1"
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M10 12L6 8l4-4" />
+                    </svg>
+                    Documents
+                  </Link>
+                )}
 
+              </div>
               {/* Document Title */}
               {isLoadingDoc ? (
                 <div className="w-40 h-6 skeleton" />
@@ -1410,21 +1492,67 @@ export default function DocPage() {
 
             {/* Right: Action Buttons */}
             <div className="flex items-center gap-2">
+              {/* Saving indicator */}
               {isSaving && (
                 <span className="text-xs text-[var(--color-text-secondary)] flex items-center gap-1">
                   <span className="animate-pulse">●</span>
                   Saving...
                 </span>
               )}
+
+              {/* Save button */}
+              <button
+                onClick={async () => {
+                  try {
+                    // defensive: call manualSaveRef if available
+                    if (manualSaveRef.current) {
+                      await manualSaveRef.current();
+                    } else {
+                      console.warn("manualSaveRef not ready");
+                    }
+                  } catch (err) {
+                    console.error("Save button error:", err);
+                  }
+                }}
+                disabled={!isReady || isSaving}
+                title={isReady ? "Save (Ctrl/Cmd + S)" : "Save unavailable"}
+                className={`btn text-base ${!isReady || isSaving ? "btn-disabled" : "btn-primary"}`}
+                type="button"
+              >
+                {/* simple save icon + label */}
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="mr-2"
+                  aria-hidden
+                >
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                  <path d="M17 21v-8H7v8" />
+                  <path d="M7 3v6h10" />
+                </svg>
+                Save
+              </button>
+
+              {/* Share button */}
               <button
                 onClick={() => setShowInviteModal(true)}
                 className="btn btn-ghost text-base"
+                type="button"
               >
                 Share
               </button>
+
+              {/* Delete / Trash */}
               <button
                 onClick={() => setShowDeleteModal(true)}
                 className="btn btn-ghost text-base text-[var(--color-text-secondary)] hover:text-[var(--color-error)]"
+                type="button"
               >
                 <svg
                   width="16"
@@ -1444,6 +1572,7 @@ export default function DocPage() {
                 </svg>
               </button>
             </div>
+
           </div>
         </div>
       </div>

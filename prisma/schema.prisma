@@ -56,6 +56,14 @@ model Document {
   htmlContent  String?  // canonical HTML for indexing
   collaborators Collaborator[]
   snapshots    DocumentSnapshot[]
+
+  // Parent/children hierarchy
+  parentId     String?   // optional parent document id
+  parent       Document? @relation("ParentChild", fields: [parentId], references: [id], onDelete: Cascade)
+  children     Document[] @relation("ParentChild")
+
+  @@index([workspaceId])
+  @@index([parentId])
 }
 
 model YjsSnapshot {

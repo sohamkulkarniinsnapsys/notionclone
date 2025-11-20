@@ -23,6 +23,44 @@ export interface DocumentWithBreadcrumb {
 }
 
 /**
+ * Create document helper (centralized)
+ */
+export async function createDocument(
+  userId: string,
+  workspaceId: string,
+  opts: { title?: string; parentId?: string | null; contentJson?: any } = {},
+) {
+  const { title = "Untitled", parentId = null, contentJson = null } = opts;
+
+  // If parentId provided, double-check parent exists and belongs to the workspace
+  if (parentId) {
+    const parent = await prisma.document.findUnique({
+      where: { id: parentId },
+      select: { id: true, workspaceId: true },
+    });
+    if (!parent) {
+      throw new Error("Parent document not found");
+    }
+    if (parent.workspaceId !== workspaceId) {
+      throw new Error("Parent document belongs to a different workspace");
+    }
+  }
+
+  const doc = await prisma.document.create({
+    data: {
+      title,
+      workspaceId,
+      ownerId: userId,
+      createdBy: userId,
+      parentId,
+      contentJson,
+    },
+  });
+
+  return doc;
+}
+
+/**
  * Get document with breadcrumb trail and permissions
  */
 export async function getDocumentWithBreadcrumb(
@@ -123,12 +161,10 @@ async function generateBreadcrumb(
       return breadcrumb;
     }
 
-    // Try to find parent documents by analyzing content
-    // This is a simplified approach - in a real implementation,
-    // you'd store parent-child relationships explicitly
+    // Find parent documents via explicit parentId chain
     const parentDocs = await findParentDocuments(documentId, workspaceId);
 
-    // Add parent documents to breadcrumb
+    // Add parent documents to breadcrumb (they are ordered top -> immediate parent)
     for (const parent of parentDocs) {
       breadcrumb.push({
         id: parent.id,
@@ -150,22 +186,48 @@ async function generateBreadcrumb(
 }
 
 /**
- * Find parent documents (simplified implementation)
- * In a production system, you'd have an explicit parent_id field
+ * Find parent documents by walking `parentId` chain.
+ * Returns an array ordered from top-most ancestor (closest to workspace root)
+ * down to the immediate parent.
  */
 async function findParentDocuments(
   documentId: string,
-  workspaceId: string,
+  workspaceId?: string,
 ): Promise<Array<{ id: string; title: string }>> {
   try {
-    // This is a placeholder - in a real system, you'd:
-    // 1. Have a parent_id field in the Document model
-    // 2. Or store page references in a separate PageRelation table
-    // 3. Or parse the document content to find parent references
+    const parents: Array<{ id: string; title: string }> = [];
 
-    // For now, return empty array
-    // You can extend this by adding a parent_id field to the schema
-    return [];
+    // Get the starting doc's parentId
+    let current = await prisma.document.findUnique({
+      where: { id: documentId },
+      select: { parentId: true },
+    });
+
+    // Walk up the parent chain
+    while (current?.parentId) {
+      const parent = await prisma.document.findUnique({
+        where: { id: current.parentId },
+        select: { id: true, title: true, parentId: true, workspaceId: true },
+      });
+
+      if (!parent) break;
+
+      // Optional: ensure parent belongs to same workspace (defensive)
+      if (workspaceId && parent.workspaceId !== workspaceId) {
+        // stop traversal if parent not in same workspace (data inconsistency)
+        break;
+      }
+
+      // We want ancestors in top -> bottom order. We'll unshift each found parent.
+      parents.unshift({
+        id: parent.id,
+        title: parent.title ?? "Untitled",
+      });
+
+      current = { parentId: parent.parentId };
+    }
+
+    return parents;
   } catch (error) {
     console.error("Error finding parent documents:", error);
     return [];

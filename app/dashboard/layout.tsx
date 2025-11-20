@@ -1,7 +1,7 @@
+// app/dashboard/layout.tsx
 import React from "react";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import AppSidebar from "@/components/sidebar/AppSidebar";
 
 export default async function DashboardLayout({
   children,
@@ -14,5 +14,5 @@ export default async function DashboardLayout({
     redirect("/auth/signin");
   }
 
-  return <AppSidebar>{children}</AppSidebar>;
+  return <>{children}</>;
 }

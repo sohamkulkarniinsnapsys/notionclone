@@ -1,5 +1,6 @@
 // Workspace page - redirects to documents list
 import { redirect } from 'next/navigation';
+import AppSidebar from '@/components/sidebar/AppSidebar';
 
 type Props = {
   params: Promise<{ workspaceId: string }>;
