@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "@tiptap/extension-link";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import Image from "@tiptap/extension-image";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -76,6 +77,11 @@ export default function TiptapEditor({
       // core
       StarterKit.configure({
         history: false, // Disable history when using collaboration
+      }),
+      Image.configure({
+        inline: false,
+        allowBase64: false,
+        HTMLAttributes: { class: "tiptap-image max-w-full rounded-md" },
       }),
 
       PageBlock,

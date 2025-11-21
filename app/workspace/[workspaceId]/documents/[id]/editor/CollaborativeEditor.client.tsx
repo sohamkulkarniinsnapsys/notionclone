@@ -10,6 +10,7 @@ import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import Placeholder from "@tiptap/extension-placeholder";
 import axios from "axios";
 import { PageBlock } from "@/components/extensions/PageBlock";
+import Image from "@tiptap/extension-image";
 
 type Props = {
   documentId: string;
@@ -96,6 +97,11 @@ export default function CollaborativeEditor({ documentId, user }: Props) {
   const editor = useEditor({
     extensions: [
       StarterKit,
+      Image.configure({
+        inline: false,
+        allowBase64: false,
+        HTMLAttributes: { class: "tiptap-image max-w-full rounded-md" },
+      }),
       PageBlock,
       Placeholder.configure({
         placeholder: "Start typing...",

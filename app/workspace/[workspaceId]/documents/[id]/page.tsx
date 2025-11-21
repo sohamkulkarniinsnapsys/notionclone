@@ -11,8 +11,8 @@ import TiptapEditor from "@/components/TiptapEditor";
 import PresenceBar from "@/components/PresenceBar";
 import InviteForm from "@/components/InviteForm";
 import Breadcrumb from "@/components/breadcrumbs/Breadcrumb";
-// removed the previous external BreadcrumbItem import to avoid type mismatch
-// import { BreadcrumbItem } from "@/lib/types";
+import ExportButton from "@/components/ExportButton.client";
+import Image from "@tiptap/extension-image";
 
 // Types
 type Params = {
@@ -483,7 +483,7 @@ export default function DocPage() {
 
     // Save debounce state
     let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-    const SAVE_DEBOUNCE_MS = 3000; // 3 seconds to reduce server load and improve performance
+    const SAVE_DEBOUNCE_MS = 1000; // 3 seconds to reduce server load and improve performance
     let lastSaveTime = 0; // Track last save to prevent excessive saves
     const MIN_SAVE_INTERVAL = 2000; // Minimum 2 seconds between saves
 
@@ -1466,11 +1466,6 @@ export default function DocPage() {
                     items={breadcrumbItems}
                     workspaceId={workspaceId ?? ""}
                     maxVisible={28}
-                    onNavigate={(pageId: string) => {
-                      if (!workspaceId) return;
-                      router.push(`/workspace/${workspaceId}/documents/${pageId}`);
-                    }}
-                    className="mr-2"
                   />
                 ) : (
                   <Link
@@ -1571,6 +1566,8 @@ export default function DocPage() {
                 </svg>
                 Save
               </button>
+
+              <ExportButton docId={docId!} />
 
               {/* Share button */}
               <button

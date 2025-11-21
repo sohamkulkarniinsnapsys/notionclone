@@ -159,6 +159,90 @@ export function getSlashCommands(): CommandItem[] {
       aliases: ["ol", "ordered", "numbers"],
     },
 
+    // Image
+    {
+      title: "Image",
+      description: "Upload an image from your files",
+      icon: "🖼️",
+      category: "media",
+      command: (editor) => {
+        try {
+          console.log("[Slash] Image command invoked");
+          // Create a hidden file input and trigger it — must be triggered in response to a user action
+          const input = document.createElement("input");
+          input.type = "file";
+          input.accept = "image/*";
+          input.style.display = "none";
+          // Ensure input is attached to DOM for some browsers to allow .click()
+          document.body.appendChild(input);
+
+          input.onchange = async () => {
+            const file = input.files?.[0];
+            // Cleanup DOM element early
+            setTimeout(() => {
+              try {
+                input.remove();
+              } catch {}
+            }, 1000);
+
+            if (!file) {
+              console.log("[Slash] No file selected");
+              return;
+            }
+
+            console.log("[Slash] Selected file:", file.name, file.size, file.type);
+
+            // Upload to same-origin API route /api/uploads
+            try {
+              const fd = new FormData();
+              fd.append("file", file, file.name);
+
+              const res = await fetch("/api/uploads", {
+                method: "POST",
+                body: fd,
+              });
+
+              if (!res.ok) {
+                const txt = await res.text().catch(() => "");
+                console.error("[Slash] upload failed:", res.status, txt);
+                alert("Image upload failed");
+                return;
+              }
+
+              const json = await res.json().catch(() => null);
+              const url = json?.url ?? json?.data?.url; // accept common shapes
+
+              if (!url) {
+                console.error("[Slash] upload returned no url:", json);
+                alert("Upload succeeded but no image URL returned");
+                return;
+              }
+
+              console.log("[Slash] upload succeeded, url:", url);
+
+              // Insert image in TipTap. Use any cast if your editor types don't include setImage.
+              try {
+                (editor as any).chain().focus().setImage({ src: url }).run();
+              } catch (err) {
+                console.error("[Slash] failed to insert image into editor:", err);
+                alert("Image uploaded but could not be inserted into the document");
+              }
+            } catch (err) {
+              console.error("[Slash] upload error:", err);
+              alert("Image upload error (see console)");
+            }
+          };
+
+          // Trigger file picker (this is a user-initiated event because the slash item click/Enter triggered it)
+          input.click();
+        } catch (err) {
+          console.error("[Slash] Image command top-level error:", err);
+        }
+      },
+      aliases: ["image", "img", "picture", "photo"],
+    },
+
+
     // Quotes and code
     {
       title: "Quote",

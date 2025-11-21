@@ -48,3 +48,5 @@ next-env.d.ts
 *.txt
 
 todo
+
+testmd

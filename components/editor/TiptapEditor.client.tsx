@@ -4,9 +4,8 @@ import React, { useEffect } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import BulletList from "@tiptap/extension-bullet-list";
-import OrderedList from "@tiptap/extension-ordered-list";
 import { PageBlock } from "../extensions/PageBlock";
+import Image from "@tiptap/extension-image";
 
 type Props = {
   docId: string;

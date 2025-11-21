@@ -13,6 +13,7 @@ import TableHeader from "@tiptap/extension-table-header";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import { Awareness as YAwareness } from "y-protocols/awareness";
+import Image from "@tiptap/extension-image";
 import {
   SlashCommand,
   createSlashCommandSuggestion,
@@ -77,6 +78,12 @@ export default function TiptapEditor({
       Placeholder.configure({
         placeholder: "Type '/' for commands or start writing...",
       }),
+      Image.configure({
+        inline: false,
+        allowBase64: false,
+        HTMLAttributes: { class: "tiptap-image max-w-full rounded-md" },
+      }),
+
       Table.configure({ resizable: true }),
       TableRow,
       TableCell,

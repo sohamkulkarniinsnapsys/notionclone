@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import AppSidebar from "@/components/sidebar/AppSidebar";
+import ImportDocumentButton from "@/components/ImportButton.client";
 
 type Props = {
   params: Promise<{ workspaceId: string }>;
@@ -143,6 +144,7 @@ export default async function DocumentsListPage({ params }: Props) {
                 placeholder="Document title..."
                 className="input flex-1"
               />
+              <ImportDocumentButton workspaceId={workspaceId} />
               <button type="submit" className="btn btn-primary">
                 Create Document
               </button>
