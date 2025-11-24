@@ -12,7 +12,8 @@ import PresenceBar from "@/components/PresenceBar";
 import InviteForm from "@/components/InviteForm";
 import Breadcrumb from "@/components/breadcrumbs/Breadcrumb";
 import ExportButton from "@/components/ExportButton.client";
-import Image from "@tiptap/extension-image";
+import DrawingOverlay from "@/components/drawing/DrawingOverlay.client";
+import useDrawingUpload from "@/components/drawing/useDrawingUpload";
 
 // Types
 type Params = {
@@ -132,6 +133,10 @@ export default function DocPage() {
 
   // Save button enabled state
   const [isSaving, setIsSaving] = useState(false);
+
+  // Draw
+  const [isDrawingOpen, setIsDrawingOpen] = useState(false);
+  const { upload } = useDrawingUpload();
 
   // User info derived from session - deterministic colors
   const user = useMemo(() => {
@@ -1451,9 +1456,74 @@ export default function DocPage() {
     </div>
   );
 
-  // The main editor UI (extracted from your original main return)
+  useEffect(() => {
+    (window as any).__openDrawingOverlay = () => setIsDrawingOpen(true);
+
+    const legacyHandler = (ev: any) => {
+      try {
+        // legacy custom event support (slash:open-draw-overlay)
+        setIsDrawingOpen(true);
+      } catch {}
+    };
+    window.addEventListener("slash:open-draw-overlay", legacyHandler);
+
+    return () => {
+      try {
+        delete (window as any).__openDrawingOverlay;
+      } catch {}
+      window.removeEventListener("slash:open-draw-overlay", legacyHandler);
+    };
+  }, []);
+
+  // Upload + insertion handler used by the overlay
+  const handleDrawingComplete = async (blob: Blob, meta?: Record<string, any>) => {
+    try {
+      const res = await upload(blob, {
+        filename: meta?.filename ?? `drawing-${Date.now()}.png`,
+      });
+      const url = res?.url;
+      if (!url) throw new Error("Upload returned no URL");
+
+      // Use editor reference exported on window by the TiptapEditor wrapper
+      const editor = (window as any).__tiptapEditor ?? null;
+      if (editor && typeof editor.chain === "function") {
+        try {
+          editor.chain().focus().setImage({ src: url }).run();
+        } catch (err) {
+          console.warn("[Draw] Failed to insert image via editor.chain()", err);
+          try {
+            editor.commands.setImage && editor.commands.setImage({ src: url });
+          } catch (err2) {
+            console.error("[Draw] Insert fallback failed:", err2);
+          }
+        }
+      } else {
+        // If editor reference not present, dispatch a fallback event with the url
+        try {
+          window.dispatchEvent(new CustomEvent("slash:insert-image-url", { detail: { url } }));
+          console.warn("[Draw] Inserted image via fallback event 'slash:insert-image-url'");
+        } catch (e) {
+          console.error("[Draw] No editor available to insert drawing image:", e);
+        }
+      }
+    } catch (err) {
+      console.error("[Draw] upload/insert error:", err);
+      // optionally inform user (not blocking)
+      try {
+        window.alert && window.alert("Failed to upload drawing. See console for details.");
+      } catch {}
+    } finally {
+      setIsDrawingOpen(false);
+    }
+  };
+
   const mainEditorUI = (
-    <div className="flex flex-col h-full">
+   <div className="flex flex-col h-full">
+      <DrawingOverlay
+        visible={isDrawingOpen}
+        onCancel={() => setIsDrawingOpen(false)}
+        onComplete={handleDrawingComplete}
+      />
       {/* Document Header */}
       <div className="border-b border-[var(--color-border)] bg-[var(--color-bg-primary)] sticky top-0 z-[var(--z-sticky)]">
         <div className="editor-container py-4">

@@ -8,6 +8,8 @@ import * as awarenessProtocol from "y-protocols/awareness";
 import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
 import dotenv from "dotenv";
+import fs from "fs";
+import path from "path";
 
 dotenv.config();
 
@@ -30,16 +32,100 @@ if (!secret) {
 console.log("[yws] Startup DB prefix:", (process.env.DATABASE_URL || "").slice(0, 80));
 console.log("[yws] NEXTAUTH_SECRET length:", (process.env.NEXTAUTH_SECRET || "").length);
 
+// In-memory docs + awareness
 const docs = new Map();
 const awarenessInstances = new Map();
 
+// Persistence config (directory for snapshots)
+const SNAPSHOT_DIR = process.env.YWS_SNAPSHOT_DIR || path.resolve(process.cwd(), "yws_snapshots");
+const SAVE_DEBOUNCE_MS = Number(process.env.YWS_SAVE_DEBOUNCE_MS || 1500);
+
+if (!fs.existsSync(SNAPSHOT_DIR)) {
+  try {
+    fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
+  } catch (e) {
+    console.error("[yws] Failed to create snapshot directory:", SNAPSHOT_DIR, e);
+    process.exit(1);
+  }
+}
+
 const messageSync = 0;
 const messageAwareness = 1;
+
+function getSnapshotPath(docName) {
+  // sanitize filename
+  const safeName = docName.replace(/[\/\\:?<>|"]/g, "_");
+  return path.join(SNAPSHOT_DIR, `${safeName}.ydoc`);
+}
+
+function persistYDocToDisk(docName, doc) {
+  try {
+    const update = Y.encodeStateAsUpdate(doc);
+    const filePath = getSnapshotPath(docName);
+    // atomic write: write to temp then rename
+    const tmpPath = `${filePath}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmpPath, Buffer.from(update));
+    fs.renameSync(tmpPath, filePath);
+    console.log(`[yws] persisted doc ${docName} (${update.length} bytes) -> ${filePath}`);
+  } catch (err) {
+    console.error(`[yws] persistYDocToDisk failed for ${docName}:`, err);
+  }
+}
+
+function loadYDocFromDiskIfExists(docName, doc) {
+  try {
+    const filePath = getSnapshotPath(docName);
+    if (!fs.existsSync(filePath)) return false;
+    const data = fs.readFileSync(filePath);
+    if (!data || data.length === 0) return false;
+    // apply update to doc
+    Y.applyUpdate(doc, new Uint8Array(data));
+    console.log(`[yws] loaded snapshot for ${docName} (${data.length} bytes) from ${filePath}`);
+    return true;
+  } catch (err) {
+    console.error(`[yws] loadYDocFromDiskIfExists failed for ${docName}:`, err);
+    return false;
+  }
+}
+
+// Debounced save management
+const saveTimeouts = new Map();
+function schedulePersist(docName, doc) {
+  // clear existing timer
+  const existing = saveTimeouts.get(docName);
+  if (existing) clearTimeout(existing);
+  const t = setTimeout(() => {
+    try {
+      persistYDocToDisk(docName, doc);
+    } finally {
+      saveTimeouts.delete(docName);
+    }
+  }, SAVE_DEBOUNCE_MS);
+  saveTimeouts.set(docName, t);
+}
+
+function saveAndClear(docName) {
+  const doc = docs.get(docName);
+  if (doc) {
+    try {
+      persistYDocToDisk(docName, doc);
+    } catch (err) {
+      console.error(`[yws] saveAndClear error for ${docName}:`, err);
+    }
+  }
+  const to = saveTimeouts.get(docName);
+  if (to) {
+    clearTimeout(to);
+    saveTimeouts.delete(docName);
+  }
+}
 
 function getYDoc(docName) {
   let doc = docs.get(docName);
   if (!doc) {
     doc = new Y.Doc();
+    // load existing snapshot if available
+    loadYDocFromDiskIfExists(docName, doc);
     docs.set(docName, doc);
     console.log(`Created new Y.Doc for room: ${docName}`);
   }
@@ -152,6 +238,8 @@ const server = http.createServer(async (req, res) => {
           snapshotSize = snapshot.length;
         }
 
+        // persist before deleting
+        saveAndClear(documentId);
         docs.delete(documentId);
         awarenessInstances.delete(documentId);
 
@@ -232,6 +320,9 @@ const server = http.createServer(async (req, res) => {
 
         otherClients.forEach((client) => safeSend(client, payloadBuf));
 
+        // schedule persist
+        schedulePersist(documentId, doc);
+
         console.log(`[ADMIN/BROADCAST] meta applied for ${documentId}, sent to ${otherClients.length} client(s)`);
 
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -292,7 +383,6 @@ wss.on("connection", async (ws, req) => {
     const permissions = await checkDocumentPermission(userId, docName);
 
     if (!permissions.canView) {
-      // Log helpful debug info once per denial (but keep reasonable verbosity)
       const debugRows = await getDebugRows(userId, docName).catch(() => ({ workspaceMembers: [], collaborators: [], workspaceId: null }));
       console.warn(`[WS] Denying access to user ${userId} for doc ${docName}. workspaceId=${debugRows.workspaceId}`);
       console.debug(`[WS][DEBUG] workspaceMembers: ${JSON.stringify(debugRows.workspaceMembers || [], null, 2)}`);
@@ -301,7 +391,6 @@ wss.on("connection", async (ws, req) => {
       return;
     }
 
-    // attach to socket
     ws.userId = userId;
     ws.userEmail = userEmail;
     ws.permissions = permissions;
@@ -353,6 +442,11 @@ wss.on("connection", async (ws, req) => {
         if (otherClients.length > 0) {
           otherClients.forEach((client) => safeSend(client, uint8Array));
         }
+
+        // schedule persistence after a document update
+        if (isDocumentUpdate) {
+          schedulePersist(docName, doc);
+        }
       } else if (messageType === messageAwareness) {
         awarenessProtocol.applyAwarenessUpdate(
           awareness,
@@ -377,6 +471,8 @@ wss.on("connection", async (ws, req) => {
         (client) => client.room === docName && client.readyState === WebSocket.OPEN,
       );
       if (!hasConnections) {
+        // persist the doc before cleaning it up (final save)
+        saveAndClear(docName);
         docs.delete(docName);
         awarenessInstances.delete(docName);
         console.log(`Cleaned up room: ${docName}`);
@@ -438,6 +534,14 @@ server.listen(port, () => {
 
 const shutdown = () => {
   clearInterval(pingInterval);
+  // persist all docs before shutdown
+  try {
+    for (const [docName, doc] of docs.entries()) {
+      saveAndClear(docName);
+    }
+  } catch (e) {
+    console.error("[yws] error while persisting docs during shutdown:", e);
+  }
   wss.clients.forEach((client) => client.close(1001, "Server shutting down"));
   docs.clear();
   awarenessInstances.clear();

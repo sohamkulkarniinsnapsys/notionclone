@@ -86,9 +86,83 @@ export async function POST(request: Request) {
       await fs.promises.writeFile(destPath, buffer);
     }
 
+    // Optional metadata passed as `meta` form field (string or JSON)
+    // If present and valid JSON, persist it next to the image as images/<sha>.meta.json
+    let metaSaved = false;
+    let metaKey: string | null = null;
+    try {
+      const rawMeta = formData.get("meta");
+      if (rawMeta) {
+        // `meta` may be a File or string. Support both.
+        let metaObj: any = null;
+        if (rawMeta instanceof File) {
+          const metaText = await rawMeta.text();
+          try {
+            metaObj = JSON.parse(metaText);
+          } catch {
+            // if not JSON, store as raw text under `content` property
+            metaObj = { content: metaText };
+          }
+        } else if (typeof rawMeta === "string") {
+          try {
+            metaObj = JSON.parse(rawMeta);
+          } catch {
+            metaObj = { content: rawMeta };
+          }
+        }
+
+        if (metaObj !== null) {
+          const metaDir = path.join(UPLOADS_PUBLIC_DIR, "images", "meta");
+          await fs.promises.mkdir(metaDir, { recursive: true });
+          const metaFilename = `${sha}.meta.json`;
+          const metaPath = path.join(metaDir, metaFilename);
+          // Write meta if missing or if different content
+          const metaExists = await fs.promises
+            .access(metaPath)
+            .then(() => true)
+            .catch(() => false);
+
+          const metaContent = JSON.stringify(
+            {
+              createdAt: new Date().toISOString(),
+              filename: safeBase,
+              contentType,
+              size: buffer.length,
+              meta: metaObj,
+            },
+            null,
+            2,
+          );
+
+          if (!metaExists) {
+            await fs.promises.writeFile(metaPath, metaContent, "utf8");
+            metaSaved = true;
+            metaKey = `images/meta/${metaFilename}`;
+          } else {
+            // Optionally update if content differs (you may prefer to keep original)
+            const prev = await fs.promises.readFile(metaPath, "utf8").catch(() => null);
+            if (prev !== metaContent) {
+              await fs.promises.writeFile(metaPath, metaContent, "utf8");
+              metaSaved = true;
+              metaKey = `images/meta/${metaFilename}`;
+            } else {
+              metaSaved = true;
+              metaKey = `images/meta/${metaFilename}`;
+            }
+          }
+        }
+      }
+    } catch (metaErr) {
+      // Do not fail upload if meta save fails; just log
+      console.warn("[UPLOAD] failed to save meta:", metaErr);
+    }
+
     // Public URL — use env override if provided
     const publicUrlPrefix = process.env.PUBLIC_UPLOADS_URL ?? "";
-    const url = publicUrlPrefix ? `${publicUrlPrefix.replace(/\/$/, "")}/uploads/${key}` : `/uploads/${key}`;
+    const url =
+      publicUrlPrefix
+        ? `${publicUrlPrefix.replace(/\/$/, "")}/uploads/${key}`
+        : `/uploads/${key}`;
 
     const headers = {
       // clients can cache uploaded images aggressively (immutable by sha)
@@ -104,6 +178,8 @@ export async function POST(request: Request) {
         size: buffer.length,
         contentType,
         filename: safeBase,
+        metaSaved,
+        metaKey,
       },
       { status: 200, headers },
     );

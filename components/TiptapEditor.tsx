@@ -23,6 +23,8 @@ import {
   createSlashCommandSuggestion,
 } from "./editor/slash-command";
 import { PageBlock } from "./extensions/PageBlock";
+import DrawingOverlay from "./drawing/DrawingOverlay.client";
+import useDrawingUpload from "./drawing/useDrawingUpload";
 
 interface TiptapEditorProps {
   ydoc: Y.Doc;
@@ -58,6 +60,21 @@ export default function TiptapEditor({
   const [isReady, setIsReady] = useState(false);
   const [isSyncing, setIsSyncing] = useState(true);
 
+  const [isDrawingOpen, setIsDrawingOpen] = useState(false);
+  const { upload } = useDrawingUpload();
+
+  const [overlays, setOverlays] = React.useState<
+    { id: string; url: string; meta?: Record<string, any> }[]
+  >([]);
+
+  function addOverlay(url: string, meta?: Record<string, any>) {
+    const id = `overlay_${Math.random().toString(36).slice(2, 9)}`;
+    setOverlays((s) => [...s, { id, url, meta }]);
+  }
+
+  const editorContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const editorWrapperRef = React.useRef<HTMLDivElement | null>(null);
+  
   // Prefer awareness instance if provided directly or as provider.awareness
   const resolvedAwareness: Awareness | null =
     awareness ?? (provider && (provider as any).awareness) ?? null;
@@ -380,9 +397,49 @@ export default function TiptapEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedAwareness, user?.id, editor]); // only re-run if user ID changes
 
-  //
   // Render / fallbacks
-  //
+  React.useEffect(() => {
+    (window as any).__openDrawingOverlay = () => setIsDrawingOpen(true);
+    (window as any).__tiptapEditor = editor ?? null;
+
+    const onOpenOverlayEvent = (ev: Event) => {
+      try {
+        const detail = (ev as CustomEvent)?.detail;
+        const name = detail?.name ?? null;
+        if (!name) return;
+        if (name === "draw") {
+          setIsDrawingOpen(true);
+        }
+      } catch (err) {
+        // ignore
+      }
+    };
+
+    const onOpenDrawEvent = (_ev: Event) => {
+      try {
+        setIsDrawingOpen(true);
+      } catch {}
+    };
+
+    window.addEventListener("slash:open-overlay", onOpenOverlayEvent as EventListener);
+    window.addEventListener("slash:open-draw-overlay", onOpenDrawEvent as EventListener);
+
+    return () => {
+      try {
+        delete (window as any).__openDrawingOverlay;
+        delete (window as any).__tiptapEditor;
+      } catch (e) {
+        /* ignore */
+      }
+      try {
+        window.removeEventListener("slash:open-overlay", onOpenOverlayEvent as EventListener);
+        window.removeEventListener("slash:open-draw-overlay", onOpenDrawEvent as EventListener);
+      } catch (e) {
+        /* ignore cleanup errors */
+      }
+    };
+  }, [editor]);
+
   if (!editor) {
     return (
       <div
@@ -450,7 +507,7 @@ export default function TiptapEditor({
 
   return (
     <div style={{ position: "relative" }}>
-      {isSyncing && (
+            {isSyncing && (
         <div
           style={{
             position: "absolute",
@@ -470,15 +527,57 @@ export default function TiptapEditor({
       )}
 
       <div
+        ref={editorContainerRef}
         style={{
           border: "1px solid var(--color-border)",
           borderRadius: 8,
           minHeight: 400,
           background: "var(--color-bg-primary)",
           willChange: "contents",
+          position: "relative", // required so overlay positioned absolute inside it
+          overflow: "hidden",   // keep overlay clipped to editor area
         }}
       >
         <EditorContent editor={editor} />
+        {overlays.map((o) => (
+          <img
+            key={o.id}
+            src={o.url}
+            alt="drawing overlay"
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "contain", // or "cover", choose as desired
+              pointerEvents: "none", // let editor interactions pass through
+              zIndex: 9998,
+            }}
+            data-meta={JSON.stringify(o.meta ?? {})}
+          />
+        ))}
+        
+        <DrawingOverlay
+          visible={isDrawingOpen}
+          onCancel={() => setIsDrawingOpen(false)}
+          onComplete={async (blob: Blob, meta?: Record<string, any>) => {
+            try {
+              const result = await upload(blob, {
+                filename: meta?.filename ?? `drawing-${Date.now()}.png`,
+              });
+              const url = result?.url;
+              if (!url) throw new Error("Upload missing url");
+
+              // Instead of inserting into the ProseMirror document, render it as overlay:
+              addOverlay(url, meta);
+            } catch (err) {
+              console.error("[TiptapEditor] drawing upload failed", err);
+            } finally {
+              setIsDrawingOpen(false);
+            }
+          }}
+        />
       </div>
 
       <style jsx global>{`

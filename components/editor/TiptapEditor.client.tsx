@@ -1,29 +1,31 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { PageBlock } from "../extensions/PageBlock";
 import Image from "@tiptap/extension-image";
 
+import DrawingOverlay from "../drawing/DrawingOverlay.client";
+import useDrawingUpload from "../drawing/useDrawingUpload";
+import { createDrawCommand, getSlashCommands } from "./slash-command";
+
 type Props = {
   docId: string;
   initialContent?: any | null;
 };
 
-/**
- * Lightweight, autosaving TipTap editor
- * Used in non-collaborative contexts (single-user pages)
- */
 export default function TiptapEditor({ docId, initialContent }: Props) {
+  const [isDrawingOpen, setIsDrawingOpen] = useState(false);
+  const { upload, uploading, progress } = useDrawingUpload();
+
   const editor = useEditor({
     extensions: [
       StarterKit,
-      Placeholder.configure({
-        placeholder: "Start writing here...",
-      }),
+      Placeholder.configure({ placeholder: "Start writing here..." }),
       PageBlock,
+      Image,
     ],
     content: initialContent ?? "<p></p>",
     immediatelyRender: false,
@@ -37,7 +39,6 @@ export default function TiptapEditor({ docId, initialContent }: Props) {
     },
   });
 
-  // Debounced autosave on document updates
   useEffect(() => {
     if (!editor) return;
 
@@ -46,8 +47,6 @@ export default function TiptapEditor({ docId, initialContent }: Props) {
         const json = editor.getJSON();
         const html = editor.getHTML();
 
-        // NOTE: Use the canonical documents endpoint for saving content.
-        // server route file exists at app/api/documents/[id]/save/route.ts
         const res = await fetch(
           `/api/documents/${encodeURIComponent(docId)}/save`,
           {
@@ -81,6 +80,63 @@ export default function TiptapEditor({ docId, initialContent }: Props) {
     };
   }, [editor, docId]);
 
+  const openDrawingOverlay = useCallback(() => setIsDrawingOpen(true), []);
+  const closeDrawingOverlay = useCallback(() => setIsDrawingOpen(false), []);
+
+  useEffect(() => {
+    const registry = (getSlashCommands as unknown as () => any)();
+    let unregister: undefined | (() => void);
+
+    if (registry && typeof registry.register === "function") {
+      unregister = registry.register(
+        createDrawCommand(() => {
+          openDrawingOverlay();
+        }),
+      );
+    } else if (registry && typeof registry.registerSlashCommand === "function") {
+      unregister = registry.registerSlashCommand(
+        createDrawCommand(() => {
+          openDrawingOverlay();
+        }),
+      );
+    }
+
+    return () => {
+      if (typeof unregister === "function") {
+        try {
+          unregister();
+        } catch (e) {
+          // ignore
+        }
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDrawingOverlay]);
+
+  const handleDrawingComplete = useCallback(
+    async (blob: Blob, meta?: Record<string, any>) => {
+      if (!editor) {
+        closeDrawingOverlay();
+        return;
+      }
+
+      try {
+        const { url } = await upload(blob, {
+          filename: meta?.filename ?? `drawing-${Date.now()}.png`,
+        });
+
+        if (!url) throw new Error("Upload did not return a URL");
+
+        editor.chain().focus().setImage({ src: url }).run();
+        closeDrawingOverlay();
+      } catch (err) {
+        console.error("[TiptapEditor] Failed to upload/insert drawing", err);
+        closeDrawingOverlay();
+      }
+    },
+    [editor, upload, closeDrawingOverlay],
+  );
+
   return (
     <div
       style={{
@@ -90,6 +146,12 @@ export default function TiptapEditor({ docId, initialContent }: Props) {
         background: "white",
       }}
     >
+      <DrawingOverlay
+        visible={isDrawingOpen}
+        onCancel={closeDrawingOverlay}
+        onComplete={handleDrawingComplete}
+      />
+
       {editor ? (
         <EditorContent editor={editor} />
       ) : (
@@ -105,7 +167,6 @@ export default function TiptapEditor({ docId, initialContent }: Props) {
       )}
 
       <style jsx global>{`
-        /* Ensure readable text colors across themes */
         .tiptap-content,
         .ProseMirror {
           background: var(--color-bg-primary) !important;
@@ -125,9 +186,6 @@ export default function TiptapEditor({ docId, initialContent }: Props) {
   );
 }
 
-/**
- * Safe debounce helper with cancel()
- */
 function debounce<T extends (...args: any[]) => void>(fn: T, ms = 200) {
   let t: ReturnType<typeof setTimeout> | null = null;
   let canceled = false;

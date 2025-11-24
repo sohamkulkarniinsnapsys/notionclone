@@ -1,6 +1,19 @@
 /**
  * Slash Command Extension for Tiptap
  * Triggers a suggestion menu when user types "/"
+ *
+ * Updated behavior:
+ * - When a slash suggestion item is executed (by Enter or by selecting it in the React menu),
+ *   we will call the command function with a single "context" object:
+ *
+ *     {
+ *       editor,    // the tiptap editor instance
+ *       range,     // the suggestion range { from, to }
+ *       props      // the suggestion props passed by the Suggestion plugin (contains item, query, etc)
+ *     }
+ *
+ * This makes it easy to implement commands that need more than the editor instance:
+ * e.g. commands that open UI (openDrawingOverlay) or need the suggestion range.
  */
 
 import { Extension } from "@tiptap/core";
@@ -33,14 +46,38 @@ export const SlashCommand = Extension.create<SlashCommandOptions>({
         // is activated by the underlying suggestion system (we also handle selection
         // inside the React menu, so this is defensive).
         command: ({ editor, range, props }) => {
-          // props is whatever createSlashCommandSuggestion passed into `render` props.
+          // props is whatever the Suggestion render passed into `render` props.
           // If props.item exists and has a command, call it.
           if (props && (props as any).item && typeof (props as any).item.command === "function") {
             const item = (props as any).item;
-            // delete the slash
+            // delete the slash (remove the typed "/" and query)
             editor.chain().focus().deleteRange(range).run();
-            // run the item's command
-            item.command(editor);
+
+            // Call the item's command with a context object so commands
+            // can perform UI actions (open overlays) or editor commands.
+            // We pass the editor, the range (useful for insertion) and the original props.
+            try {
+              // Many commands expect to receive the editor directly; we still support that
+              // by trying both conventions:
+              // 1) If the command expects an object, call with context object.
+              // 2) If the command expects the editor only, call with editor (fallback).
+              const context = { editor, range, props };
+              const result = (item.command as any)(context);
+              // If the command returned false-like and the item wanted the editor form,
+              // we can attempt the fallback; but typically command implementations will
+              // handle the object-context form.
+              if (result === false) {
+                // nothing more to do
+              }
+            } catch (err) {
+              // Fallback: attempt calling with editor as legacy form
+              try {
+                (item.command as any)(editor);
+              } catch (err2) {
+                // eslint-disable-next-line no-console
+                console.error("Slash command execution error:", err2);
+              }
+            }
           }
         },
         allow: ({ state, range }) => {
@@ -152,6 +189,7 @@ export function createSlashCommandSuggestion(): Partial<SuggestionOptions> {
             return false;
           }
 
+          // Let the React SlashMenu handle keyboard navigation.
           return component.ref.onKeyDown(props.event);
         },
 

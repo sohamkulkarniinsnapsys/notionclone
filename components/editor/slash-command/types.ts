@@ -1,15 +1,20 @@
-/**
- * Slash Command Types and Configuration
- * Defines command items and their properties for the slash menu
- */
-
+import React from "react";
 import { Editor } from "@tiptap/core";
+
+export interface CommandHelpers {
+  openOverlay?: (name: string, opts?: Record<string, any>) => void;
+  openFilePicker?: (accept?: string) => Promise<File | null>;
+  uploadFile?: (file: File | Blob, opts?: Record<string, any>) => Promise<{ url: string; filename?: string; size?: number }>;
+  notify?: (message: string, opts?: { type?: "info" | "success" | "error" }) => void;
+}
+
+export type CommandAction = (editor: Editor, helpers?: CommandHelpers) => void | Promise<void>;
 
 export interface CommandItem {
   title: string;
   description: string;
   icon: string | React.ReactNode;
-  command: (editor: Editor) => void;
+  command: CommandAction;
   aliases?: string[];
   category?: "basic" | "advanced" | "media" | "structure";
 }
@@ -19,12 +24,8 @@ export interface CommandGroup {
   commands: CommandItem[];
 }
 
-/**
- * Get all available slash commands
- */
 export function getSlashCommands(): CommandItem[] {
   return [
-    // Text blocks
     {
       title: "Text",
       description: "Start writing with plain text",
@@ -65,7 +66,6 @@ export function getSlashCommands(): CommandItem[] {
       },
       aliases: ["h3", "subheading"],
     },
-    // Page
     {
       title: "Page",
       description: "Create a new page as a block",
@@ -74,11 +74,8 @@ export function getSlashCommands(): CommandItem[] {
       aliases: ["page", "link page", "subpage"],
       command: async (editor) => {
         try {
-          // Prefer global signals if available (set in the page component)
           const workspaceFromWindow = (window as any).__CURRENT_WORKSPACE_ID ?? null;
           const parentFromWindow = (window as any).__CURRENT_DOCUMENT_ID ?? null;
-
-          // Fallback to guessing from path if globals not set
           const guessWorkspace = (() => {
             try {
               const m = window.location.pathname.match(/\/workspace\/([^/]+)/);
@@ -87,31 +84,23 @@ export function getSlashCommands(): CommandItem[] {
               return null;
             }
           })();
-
           const workspaceId = workspaceFromWindow || guessWorkspace || "personal";
-          const parentId = parentFromWindow ?? null; // null means top-level
-
+          const parentId = parentFromWindow ?? null;
           const res = await fetch("/api/documents", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               workspaceId,
               title: "Untitled",
-              parentId, // <- IMPORTANT: include parentId so DB gets linked
+              parentId,
             }),
           });
-
           if (!res.ok) {
             const text = await res.text().catch(() => "");
-            console.error(
-              "Failed to create document for page block: ",
-              res.status,
-              text,
-            );
+            console.error("Failed to create document for page block: ", res.status, text);
             alert("Failed to create page. See console for details.");
             return;
           }
-
           const data = await res.json();
           const doc = data.document;
           if (!doc || !doc.id) {
@@ -119,25 +108,17 @@ export function getSlashCommands(): CommandItem[] {
             alert("Failed to create page (invalid response).");
             return;
           }
-
-          // Insert PageBlock node with the document details
-          editor
-            .chain()
-            .focus()
-            .insertPageBlock({
-              docId: doc.id,
-              title: doc.title || "Untitled",
-              workspaceId: doc.workspaceId || workspaceId,
-            })
-            .run();
+          editor.chain().focus().insertPageBlock({
+            docId: doc.id,
+            title: doc.title || "Untitled",
+            workspaceId: doc.workspaceId || workspaceId,
+          }).run();
         } catch (err) {
           console.error("Error creating page in slash command:", err);
           alert("Error creating page. See console for details.");
         }
       },
     },
-
-    // Lists
     {
       title: "Bullet List",
       description: "Create a simple bulleted list",
@@ -158,82 +139,113 @@ export function getSlashCommands(): CommandItem[] {
       },
       aliases: ["ol", "ordered", "numbers"],
     },
-
-    // Image
     {
       title: "Image",
       description: "Upload an image from your files",
       icon: "🖼️",
       category: "media",
-      command: (editor) => {
+      command: (editor, helpers) => {
         try {
-          console.log("[Slash] Image command invoked");
-          // Create a hidden file input and trigger it — must be triggered in response to a user action
+          if (helpers?.openFilePicker) {
+            helpers.openFilePicker("image/*").then(async (file) => {
+              if (!file) return;
+              let url: string | undefined;
+              if (helpers?.uploadFile) {
+                try {
+                  const out = await helpers.uploadFile(file);
+                  url = out?.url;
+                } catch (err) {
+                  console.error("[Slash] helpers.uploadFile failed", err);
+                }
+              }
+                            if (!url) {
+                const fd = new FormData();
+                fd.append("file", file, (file as File).name);
+                const res = await fetch("/api/uploads", { method: "POST", body: fd });
+                if (!res.ok) {
+                  const txt = await res.text().catch(() => "");
+                  console.error("[Slash] upload failed:", res.status, txt);
+                  alert("Image upload failed");
+                  return;
+                }
+                const json = await res.json().catch(() => null);
+                url = json?.url ?? json?.data?.url;
+              }
+              if (!url) {
+                console.error("[Slash] upload returned no url");
+                alert("Upload succeeded but no image URL returned");
+                return;
+              }
+              try {
+                if (helpers?.openOverlay && typeof helpers.openOverlay === "function") {
+                  try {
+                    await helpers.openOverlay("image", { url, filename: (file as File).name });
+                    try { editor.commands.focus(); } catch {}
+                    return;
+                  } catch (overlayErr) {
+                    console.warn("[Slash] helpers.openOverlay failed, falling back to insert:", overlayErr);
+                  }
+                }
+                (editor as any).chain().focus().setImage({ src: url }).run();
+              } catch (err) {
+                console.error("[Slash] failed to insert or open overlay for image:", err);
+                alert("Image uploaded but could not be used (see console)");
+              }
+            });
+            return;
+          }
           const input = document.createElement("input");
           input.type = "file";
           input.accept = "image/*";
           input.style.display = "none";
-          // Ensure input is attached to DOM for some browsers to allow .click()
           document.body.appendChild(input);
-
           input.onchange = async () => {
             const file = input.files?.[0];
-            // Cleanup DOM element early
             setTimeout(() => {
               try {
                 input.remove();
               } catch {}
             }, 1000);
-
-            if (!file) {
-              console.log("[Slash] No file selected");
-              return;
-            }
-
-            console.log("[Slash] Selected file:", file.name, file.size, file.type);
-
-            // Upload to same-origin API route /api/uploads
-            try {
-              const fd = new FormData();
-              fd.append("file", file, file.name);
-
-              const res = await fetch("/api/uploads", {
-                method: "POST",
-                body: fd,
-              });
-
-              if (!res.ok) {
-                const txt = await res.text().catch(() => "");
-                console.error("[Slash] upload failed:", res.status, txt);
-                alert("Image upload failed");
-                return;
-              }
-
-              const json = await res.json().catch(() => null);
-              const url = json?.url ?? json?.data?.url; // accept common shapes
-
-              if (!url) {
-                console.error("[Slash] upload returned no url:", json);
-                alert("Upload succeeded but no image URL returned");
-                return;
-              }
-
-              console.log("[Slash] upload succeeded, url:", url);
-
-              // Insert image in TipTap. Use any cast if your editor types don't include setImage.
+            if (!file) return;
               try {
-                (editor as any).chain().focus().setImage({ src: url }).run();
+                const fd = new FormData();
+                fd.append("file", file, file.name);
+                const res = await fetch("/api/uploads", { method: "POST", body: fd });
+                if (!res.ok) {
+                  const txt = await res.text().catch(() => "");
+                  console.error("[Slash] upload failed:", res.status, txt);
+                  alert("Image upload failed");
+                  return;
+                }
+                const json = await res.json().catch(() => null);
+                const url = json?.url ?? json?.data?.url;
+                if (!url) {
+                  console.error("[Slash] upload returned no url:", json);
+                  alert("Upload succeeded but no image URL returned");
+                  return;
+                }
+                try {
+                  // Prefer opening overlay if possible — keeps media as overlay (topmost)
+                  if (helpers?.openOverlay && typeof helpers.openOverlay === "function") {
+                    try {
+                      await helpers.openOverlay("image", { url, filename: file.name });
+                      try { editor.commands.focus(); } catch {}
+                      return;
+                    } catch (overlayErr) {
+                      console.warn("[Slash] helpers.openOverlay failed, falling back to insert:", overlayErr);
+                    }
+                  }
+                  // Fallback: insert image node into document
+                  (editor as any).chain().focus().setImage({ src: url }).run();
+                } catch (err) {
+                  console.error("[Slash] failed to insert or open overlay for image:", err);
+                  alert("Image uploaded but could not be used (see console)");
+                }
               } catch (err) {
-                console.error("[Slash] failed to insert image into editor:", err);
-                alert("Image uploaded but could not be inserted into the document");
+                console.error("[Slash] upload error:", err);
+                alert("Image upload error (see console)");
               }
-            } catch (err) {
-              console.error("[Slash] upload error:", err);
-              alert("Image upload error (see console)");
-            }
           };
-
-          // Trigger file picker (this is a user-initiated event because the slash item click/Enter triggered it)
           input.click();
         } catch (err) {
           console.error("[Slash] Image command top-level error:", err);
@@ -241,9 +253,60 @@ export function getSlashCommands(): CommandItem[] {
       },
       aliases: ["image", "img", "picture", "photo"],
     },
+    {
+      title: "Draw",
+      description: "Open drawing canvas (sketch & insert)",
+      icon: "✎",
+      category: "media",
+      command: async (...args: any[]) => {
+        try {
+          // Normalize calling conventions (editor, helpers) OR ({ editor, helpers, range, props })
+          let editor: any = null;
+          let helpers: any = null;
+          if (args.length === 1 && args[0] && typeof args[0] === "object" && ("editor" in args[0] || "props" in args[0])) {
+            const ctx = args[0];
+            editor = ctx.editor ?? null;
+            helpers = ctx.helpers ?? ctx.props?.helpers ?? null;
+          } else {
+            editor = args[0] ?? null;
+            helpers = args[1] ?? null;
+          }
 
+          // Preferred: helpers.openOverlay (provided by SlashMenu effectiveHelpers)
+          if (helpers?.openOverlay && typeof helpers.openOverlay === "function") {
+            try {
+              helpers.openOverlay("draw", { initialBackground: null });
+            } catch (e) {
+              console.warn("[Slash] helpers.openOverlay failed:", e);
+            }
+            return;
+          }
 
-    // Quotes and code
+          // Next preferred: global shim injected by TiptapEditor
+          if (typeof window !== "undefined" && (window as any).__openDrawingOverlay) {
+            try {
+              (window as any).__openDrawingOverlay();
+              return;
+            } catch (e) {
+              console.warn("[Slash] window.__openDrawingOverlay call failed:", e);
+            }
+          }
+
+          // Legacy fallback: dispatch an event to keep backward compatibility
+          try {
+            window.dispatchEvent(
+              new CustomEvent("slash:open-draw-overlay", { detail: { editorId: (editor as any)?.id ?? null } }),
+            );
+          } catch (e) {
+            // swallow
+          }
+        } catch (err) {
+          console.error("[Slash] Draw command error:", err);
+        }
+      },
+      aliases: ["draw", "sketch", "sketchpad"],
+    },
+
     {
       title: "Quote",
       description: "Capture a quote",
@@ -264,7 +327,6 @@ export function getSlashCommands(): CommandItem[] {
       },
       aliases: ["code", "codeblock", "pre"],
     },
-    // Structure
     {
       title: "Divider",
       description: "Visually divide blocks",
@@ -281,55 +343,24 @@ export function getSlashCommands(): CommandItem[] {
       icon: "⊞",
       category: "advanced",
       command: (editor: Editor) => {
-        editor
-          .chain()
-          .focus()
-          .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-          .run();
+        editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
       },
       aliases: ["grid"],
     },
   ];
 }
 
-/**
- * Filter commands based on search query
- */
-export function filterCommands(
-  commands: CommandItem[],
-  query: string,
-): CommandItem[] {
+export function filterCommands(commands: CommandItem[], query: string): CommandItem[] {
   if (!query) return commands;
-
   const normalizedQuery = query.toLowerCase().trim();
-
   return commands.filter((item) => {
-    // Match title
-    if (item.title.toLowerCase().includes(normalizedQuery)) {
-      return true;
-    }
-
-    // Match description
-    if (item.description.toLowerCase().includes(normalizedQuery)) {
-      return true;
-    }
-
-    // Match aliases
-    if (
-      item.aliases?.some((alias) =>
-        alias.toLowerCase().includes(normalizedQuery),
-      )
-    ) {
-      return true;
-    }
-
+    if (item.title.toLowerCase().includes(normalizedQuery)) return true;
+    if (item.description.toLowerCase().includes(normalizedQuery)) return true;
+    if (item.aliases?.some((alias) => alias.toLowerCase().includes(normalizedQuery))) return true;
     return false;
   });
 }
 
-/**
- * Group commands by category
- */
 export function groupCommands(commands: CommandItem[]): CommandGroup[] {
   const groups: Record<string, CommandItem[]> = {
     basic: [],
@@ -337,29 +368,15 @@ export function groupCommands(commands: CommandItem[]): CommandGroup[] {
     media: [],
     structure: [],
   };
-
   commands.forEach((command) => {
     const category = command.category || "basic";
-    if (!groups[category]) {
-      groups[category] = [];
-    }
+    if (!groups[category]) groups[category] = [];
     groups[category].push(command);
   });
-
   const result: CommandGroup[] = [];
-
-  if (groups.basic.length > 0) {
-    result.push({ name: "Basic blocks", commands: groups.basic });
-  }
-  if (groups.advanced.length > 0) {
-    result.push({ name: "Advanced", commands: groups.advanced });
-  }
-  if (groups.structure.length > 0) {
-    result.push({ name: "Structure", commands: groups.structure });
-  }
-  if (groups.media.length > 0) {
-    result.push({ name: "Media", commands: groups.media });
-  }
-
+  if (groups.basic.length > 0) result.push({ name: "Basic blocks", commands: groups.basic });
+  if (groups.advanced.length > 0) result.push({ name: "Advanced", commands: groups.advanced });
+  if (groups.structure.length > 0) result.push({ name: "Structure", commands: groups.structure });
+  if (groups.media.length > 0) result.push({ name: "Media", commands: groups.media });
   return result;
 }

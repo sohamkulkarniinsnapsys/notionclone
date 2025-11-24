@@ -4,6 +4,8 @@ import { getSession } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import AppSidebar from "@/components/sidebar/AppSidebar";
 import ImportDocumentButton from "@/components/ImportButton.client";
+import dynamic from "next/dynamic";
+import DrawingShim from "@/components/drawing/DrawingShim.client";
 
 type Props = {
   params: Promise<{ workspaceId: string }>;
@@ -208,6 +210,7 @@ export default async function DocumentsListPage({ params }: Props) {
         </div>
       </main>
     </div>
+    <DrawingShim workspaceId={workspaceId} />
     </AppSidebar>
   );
 }
